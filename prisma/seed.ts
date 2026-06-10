@@ -19,7 +19,8 @@ function makeRng(seedStr: string) {
   };
 }
 
-const D = (y: number, m: number, d = 15) => new Date(Date.UTC(y, m - 1, d));
+const D = (y: number, m: number, d = 15, h = 0) =>
+  new Date(Date.UTC(y, m - 1, d, h));
 const QUARTER_ENDS = [
   { label: "Q1 2024", y: 2024, m: 3 },
   { label: "Q2 2024", y: 2024, m: 6 },

@@ -6,7 +6,6 @@ import { getDataRoom } from "@/server/queries/deal";
 import { fmtDate } from "@/lib/utils";
 import {
   Card,
-  CardContent,
   CardDescription,
   CardHeader,
   CardTitle,

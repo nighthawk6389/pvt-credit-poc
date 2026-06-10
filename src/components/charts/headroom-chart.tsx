@@ -41,7 +41,7 @@ export function HeadroomChart({
               borderRadius: 8,
               fontSize: 12,
             }}
-            formatter={(v: number) => [`${v?.toFixed(1)}% headroom`, ""]}
+            formatter={(value) => [`${Number(value).toFixed(1)}% headroom`, ""]}
           />
           <ReferenceLine y={0} stroke="var(--danger)" strokeDasharray="4 4" />
           {keys.map((k, i) => (

@@ -54,7 +54,7 @@ export function ExposureDonut({
                 borderRadius: 8,
                 fontSize: 12,
               }}
-              formatter={(v: number, n: string) => [`${v}%`, n]}
+              formatter={(value, name) => [`${Number(value)}%`, String(name)]}
             />
           </PieChart>
         </ResponsiveContainer>

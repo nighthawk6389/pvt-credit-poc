@@ -35,6 +35,45 @@ export type Position = {
 
 type SortKey = "borrower" | "size" | "spread" | "leverage" | "mark" | "rating";
 
+function SortHead({
+  label,
+  k,
+  align = "left",
+  sort,
+  dir,
+  onToggle,
+}: {
+  label: string;
+  k: SortKey;
+  align?: "left" | "right";
+  sort: SortKey;
+  dir: "asc" | "desc";
+  onToggle: (k: SortKey) => void;
+}) {
+  return (
+    <TableHead className={align === "right" ? "text-right" : ""}>
+      <button
+        onClick={() => onToggle(k)}
+        className={cn(
+          "hover:text-foreground inline-flex items-center gap-1 transition-colors",
+          align === "right" && "flex-row-reverse",
+        )}
+      >
+        {label}
+        {sort === k ? (
+          dir === "asc" ? (
+            <ArrowUp className="size-3" />
+          ) : (
+            <ArrowDown className="size-3" />
+          )
+        ) : (
+          <ArrowUpDown className="size-3 opacity-40" />
+        )}
+      </button>
+    </TableHead>
+  );
+}
+
 export function PortfolioTable({ positions }: { positions: Position[] }) {
   const [sort, setSort] = React.useState<SortKey>("size");
   const [dir, setDir] = React.useState<"asc" | "desc">("desc");
@@ -75,36 +114,7 @@ export function PortfolioTable({ positions }: { positions: Position[] }) {
     }
   }
 
-  const SortHead = ({
-    label,
-    k,
-    align = "left",
-  }: {
-    label: string;
-    k: SortKey;
-    align?: "left" | "right";
-  }) => (
-    <TableHead className={align === "right" ? "text-right" : ""}>
-      <button
-        onClick={() => toggle(k)}
-        className={cn(
-          "hover:text-foreground inline-flex items-center gap-1 transition-colors",
-          align === "right" && "flex-row-reverse",
-        )}
-      >
-        {label}
-        {sort === k ? (
-          dir === "asc" ? (
-            <ArrowUp className="size-3" />
-          ) : (
-            <ArrowDown className="size-3" />
-          )
-        ) : (
-          <ArrowUpDown className="size-3 opacity-40" />
-        )}
-      </button>
-    </TableHead>
-  );
+  const headProps = { sort, dir, onToggle: toggle };
 
   return (
     <div className="bg-card overflow-hidden rounded-xl border border-border/70">
@@ -119,13 +129,13 @@ export function PortfolioTable({ positions }: { positions: Position[] }) {
       <Table>
         <TableHeader>
           <TableRow>
-            <SortHead label="Borrower" k="borrower" />
+            <SortHead label="Borrower" k="borrower" {...headProps} />
             <TableHead>Sector</TableHead>
-            <SortHead label="Commitment" k="size" align="right" />
-            <SortHead label="Spread" k="spread" align="right" />
-            <SortHead label="Leverage" k="leverage" align="right" />
-            <SortHead label="Mark" k="mark" align="right" />
-            <SortHead label="Rating" k="rating" align="right" />
+            <SortHead label="Commitment" k="size" align="right" {...headProps} />
+            <SortHead label="Spread" k="spread" align="right" {...headProps} />
+            <SortHead label="Leverage" k="leverage" align="right" {...headProps} />
+            <SortHead label="Mark" k="mark" align="right" {...headProps} />
+            <SortHead label="Rating" k="rating" align="right" {...headProps} />
           </TableRow>
         </TableHeader>
         <TableBody>

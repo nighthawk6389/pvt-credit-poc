@@ -29,7 +29,6 @@ export function CapitalStructure({
   ebitda?: number | null;
 }) {
   const total = facilities.reduce((s, f) => s + f.commitment, 0);
-  let cumulative = 0;
 
   return (
     <Table>
@@ -44,8 +43,10 @@ export function CapitalStructure({
         </TableRow>
       </TableHeader>
       <TableBody>
-        {facilities.map((f) => {
-          cumulative += f.commitment;
+        {facilities.map((f, idx) => {
+          const cumulative = facilities
+            .slice(0, idx + 1)
+            .reduce((s, x) => s + x.commitment, 0);
           const thru = ebitda ? cumulative / ebitda : null;
           return (
             <TableRow key={f.id}>

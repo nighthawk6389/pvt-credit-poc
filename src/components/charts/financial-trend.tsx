@@ -53,8 +53,10 @@ export function FinancialTrend({ data }: { data: Point[] }) {
               borderRadius: 8,
               fontSize: 12,
             }}
-            formatter={(v: number, n: string) =>
-              n === "leverage" ? [`${v.toFixed(1)}x`, "Net Leverage"] : [`$${v}MM`, n === "ebitda" ? "EBITDA" : "Revenue"]
+            formatter={(value, name) =>
+              name === "leverage"
+                ? [`${Number(value).toFixed(1)}x`, "Net Leverage"]
+                : [`$${Number(value)}MM`, name === "ebitda" ? "EBITDA" : "Revenue"]
             }
           />
           <Bar

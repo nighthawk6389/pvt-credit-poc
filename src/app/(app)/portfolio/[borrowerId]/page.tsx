@@ -4,7 +4,7 @@ import { Building2, MapPin, User, ArrowRight } from "lucide-react";
 
 import { getActiveRole } from "@/lib/auth/server";
 import { getBorrower } from "@/server/queries/portfolio";
-import { fmtMM, fmtPct, fmtX, fmtDate } from "@/lib/utils";
+import { fmtMM, fmtPct, fmtX } from "@/lib/utils";
 import {
   Card,
   CardContent,
@@ -13,7 +13,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { FinancialTrend } from "@/components/charts/financial-trend";
 import { AccessDenied } from "@/components/deal/access-denied";
 import { RiskRatingBadge, WatchlistBadge, CovenantChip } from "@/components/deal/badges";

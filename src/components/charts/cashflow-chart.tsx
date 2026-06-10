@@ -46,14 +46,14 @@ export function CashflowChart({ data }: { data: Point[] }) {
               borderRadius: 8,
               fontSize: 12,
             }}
-            formatter={(v: number, n: string) => {
+            formatter={(value, name) => {
               const labels: Record<string, string> = {
                 endingBal: "Balance",
                 drawdown: "Drawdown",
                 paydown: "Paydown",
                 interest: "Interest",
               };
-              return [`$${v.toFixed(1)}MM`, labels[n] ?? n];
+              return [`$${Number(value).toFixed(1)}MM`, labels[String(name)] ?? String(name)];
             }}
           />
           <Bar
