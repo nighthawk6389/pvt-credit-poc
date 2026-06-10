@@ -1,11 +1,12 @@
 import Link from "next/link";
-import { LockKeyhole } from "lucide-react";
+import { LockKeyhole, Plus } from "lucide-react";
 
 import { getActiveRole } from "@/lib/auth/server";
 import { getPipeline } from "@/server/queries/portfolio";
 import { fmtMM, fmtSpread, fmtX, fmtDate } from "@/lib/utils";
 import { PageHeader } from "@/components/shell/page-header";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 
 const COLUMNS = ["Sourcing", "Screening", "Diligence", "IC", "Docs"];
 
@@ -21,7 +22,13 @@ export default async function PipelinePage() {
       <PageHeader
         title="Deal Pipeline"
         description={`${deals.length} active opportunities · ${fmtMM(totalValue, 0)} in aggregate commitments under evaluation`}
-      />
+      >
+        <Button asChild size="sm">
+          <Link href="/pipeline/new">
+            <Plus className="size-4" /> New deal
+          </Link>
+        </Button>
+      </PageHeader>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {COLUMNS.map((stage) => {

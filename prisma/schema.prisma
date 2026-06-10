@@ -1,7 +1,9 @@
 // Private Credit Deal Room — data model (POC).
 // SQLite: enums modeled as String (validated in TS), money as Float.
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // "native" for local dev; rhel target for Vercel's serverless runtime.
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {

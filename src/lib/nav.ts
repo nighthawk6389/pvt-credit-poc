@@ -7,6 +7,7 @@ import {
   Building2,
   Handshake,
   Lock,
+  TrendingUp,
 } from "lucide-react";
 
 export type NavItem = {
@@ -20,6 +21,7 @@ export const PRIMARY_NAV: NavItem[] = [
   { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard, description: "Portfolio-wide KPIs, watchlist & covenant calendar" },
   { title: "Pipeline", href: "/pipeline", icon: GitBranch, description: "Sourcing & deal pipeline" },
   { title: "Portfolio", href: "/portfolio", icon: Briefcase, description: "Closed positions & borrower monitoring" },
+  { title: "Returns", href: "/returns", icon: TrendingUp, description: "IRR / MOIC analytics across the book" },
   { title: "Covenants", href: "/covenants", icon: ShieldAlert, description: "Cross-portfolio compliance calendar" },
   { title: "Sponsors", href: "/sponsors", icon: Handshake, description: "Sponsor relationship coverage" },
   { title: "Compliance", href: "/compliance", icon: Lock, description: "Wall-crossings & information barriers" },
