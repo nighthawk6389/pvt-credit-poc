@@ -1,0 +1,289 @@
+// Private Credit Deal Room — data model (POC).
+// SQLite: enums modeled as String (validated in TS), money as Float.
+generator client {
+  provider      = "prisma-client-js"
+  // "native" for local dev; rhel target for Vercel's serverless runtime.
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Sponsor {
+  id                String     @id @default(cuid())
+  name              String
+  type              String // "PE" | "Family Office" | "Independent Sponsor"
+  aum               Float? // $MM
+  hqCity            String?
+  relationshipOwner String?
+  vintage           Int?
+  deals             Deal[]
+  borrowers         Borrower[]
+  createdAt         DateTime   @default(now())
+}
+
+model Borrower {
+  id          String               @id @default(cuid())
+  name        String
+  sector      String
+  description String?
+  hqCity      String?
+  website     String?
+  ceo         String?
+  founded     Int?
+  sponsorId   String?
+  sponsor     Sponsor?             @relation(fields: [sponsorId], references: [id])
+  deals       Deal[]
+  facilities  Facility[]
+  financials  FinancialStatement[]
+  valuations  Valuation[]
+  riskRating  String? // internal 1-7 scale
+  riskTrend   String? // "Improving" | "Stable" | "Deteriorating"
+  watchlist   Boolean              @default(false)
+  createdAt   DateTime             @default(now())
+}
+
+model Deal {
+  id           String           @id @default(cuid())
+  codeName     String           @unique // "Project Atlas"
+  borrowerId   String
+  borrower     Borrower         @relation(fields: [borrowerId], references: [id])
+  sponsorId    String?
+  sponsor      Sponsor?         @relation(fields: [sponsorId], references: [id])
+  stage        String // Sourcing|Screening|Diligence|IC|Docs|Closed|Passed
+  status       String           @default("Active") // Active|On Hold|Closed|Passed
+  facilityType String // Unitranche | First Lien TL | ...
+  dealSize     Float // committed $MM
+  useOfProceeds String?
+  targetClose  DateTime?
+  leadName     String?
+  probability  Int?             @default(50)
+  isPrivileged Boolean          @default(true) // info-barrier flag
+  thesis       String?
+  facilities   Facility[]
+  team         DealTeamMember[]
+  folders      Folder[]
+  documents    Document[]
+  ddqItems     DDQItem[]
+  memo         CreditMemo?
+  covenants    Covenant[]
+  votes        ICVote[]
+  tasks        Task[]
+  notes        Note[]
+  events       LifecycleEvent[]
+  cashflows    CashFlowSchedule[]
+  activity     ActivityLog[]
+  createdAt    DateTime         @default(now())
+}
+
+model Facility {
+  id         String    @id @default(cuid())
+  dealId     String
+  deal       Deal      @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  borrowerId String?
+  borrower   Borrower? @relation(fields: [borrowerId], references: [id])
+  name       String
+  type       String // Unitranche|Revolver|FirstLienTL|DelayedDraw|SecondLien
+  seniority  String // First Lien|Second Lien|Unsecured
+  commitment Float // $MM
+  funded     Float     @default(0)
+  spreadBps  Int
+  floorBps   Int       @default(100)
+  oidPct     Float     @default(0)
+  pikBps     Int       @default(0)
+  upfrontFeeBps Int    @default(0)
+  maturity   DateTime?
+  order      Int       @default(0)
+}
+
+model DealTeamMember {
+  id          String  @id @default(cuid())
+  dealId      String
+  deal        Deal    @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  name        String
+  title       String?
+  role        String // Deal Lead|Analyst|IC Member|Compliance|Read-only
+  wallCrossed Boolean @default(true)
+  crossedAt   DateTime?
+}
+
+model Folder {
+  id        String     @id @default(cuid())
+  dealId    String
+  deal      Deal       @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  name      String
+  order     Int        @default(0)
+  documents Document[]
+}
+
+model Document {
+  id         String   @id @default(cuid())
+  dealId     String
+  deal       Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  folderId   String?
+  folder     Folder?  @relation(fields: [folderId], references: [id])
+  name       String
+  kind       String // CIM|Financials|LegalDocs|DDReport|Model|Memo|Other
+  fileType   String   @default("pdf") // pdf|xlsx|docx
+  sizeKb     Int      @default(0)
+  version    Int      @default(1)
+  privilege  String   @default("Deal Team") // Deal Team|IC|Compliance|All
+  bodyText   String? // synthetic extractable text for AI Q&A
+  uploadedBy String?
+  uploadedAt DateTime @default(now())
+}
+
+model DDQItem {
+  id       String  @id @default(cuid())
+  dealId   String
+  deal     Deal    @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  category String // Commercial|Financial|Legal|Management|ESG
+  question String
+  status   String  @default("Open") // Open|In Review|Cleared|Flag
+  answer   String?
+  assignee String?
+  order    Int     @default(0)
+}
+
+model CreditMemo {
+  id             String   @id @default(cuid())
+  dealId         String   @unique
+  deal           Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  status         String   @default("Draft") // Draft|In Review|Approved|Rejected
+  sections       String // JSON: [{ key, title, body }]
+  recommendation String?
+  proposedRating String?
+  updatedAt      DateTime @updatedAt
+}
+
+model Covenant {
+  id        String         @id @default(cuid())
+  dealId    String
+  deal      Deal           @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  name      String // Total Net Leverage|Fixed Charge Coverage|Min Liquidity
+  type      String // Maintenance|Incurrence
+  operator  String // "<=" | ">="
+  threshold Float
+  unit      String // x|$MM|%
+  frequency String         @default("Quarterly")
+  tests     CovenantTest[]
+}
+
+model CovenantTest {
+  id          String   @id @default(cuid())
+  covenantId  String
+  covenant    Covenant @relation(fields: [covenantId], references: [id], onDelete: Cascade)
+  periodEnd   DateTime
+  testDate    DateTime
+  actual      Float?
+  headroomPct Float?
+  status      String   @default("Upcoming") // Pass|Breach|Waived|Upcoming
+  note        String?
+}
+
+model FinancialStatement {
+  id               String   @id @default(cuid())
+  borrowerId       String
+  borrower         Borrower @relation(fields: [borrowerId], references: [id], onDelete: Cascade)
+  periodEnd        DateTime
+  periodLabel      String // "Q1 2025"
+  periodType       String // Q|A|LTM
+  revenue          Float
+  ebitda           Float
+  ebitdaMargin     Float?
+  netLeverage      Float
+  interestCoverage Float
+  liquidity        Float
+  capex            Float?
+  fcf              Float?
+  isActual         Boolean  @default(true)
+}
+
+model Valuation {
+  id           String   @id @default(cuid())
+  borrowerId   String
+  borrower     Borrower @relation(fields: [borrowerId], references: [id], onDelete: Cascade)
+  asOf         DateTime
+  method       String // Yield|DCF|MarketComp
+  fairValuePct Float // % of par
+  fairValueAmt Float // $MM
+  costBasis    Float
+  discountRate Float?
+  status       String   @default("Draft") // Draft|Committee|Final
+  note         String?
+}
+
+model CashFlowSchedule {
+  id           String   @id @default(cuid())
+  dealId       String
+  deal         Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  periodEnd    DateTime
+  periodLabel  String
+  beginningBal Float
+  drawdown     Float    @default(0)
+  paydown      Float    @default(0)
+  pikAccrued   Float    @default(0)
+  interest     Float    @default(0)
+  endingBal    Float
+  isProjected  Boolean  @default(false)
+  order        Int      @default(0)
+}
+
+model LifecycleEvent {
+  id            String   @id @default(cuid())
+  dealId        String
+  deal          Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  type          String // Amendment|Waiver|Drawdown|Paydown|RateReset|Restructuring|Notice
+  title         String
+  detail        String?
+  amount        Float?
+  status        String   @default("Completed") // Pending|Completed|Executed
+  effectiveDate DateTime
+  createdBy     String?
+  createdAt     DateTime @default(now())
+}
+
+model ICVote {
+  id      String   @id @default(cuid())
+  dealId  String
+  deal    Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  voter   String
+  vote    String // Approve|Reject|Abstain|Conditional
+  comment String?
+  votedAt DateTime @default(now())
+}
+
+model Task {
+  id       String    @id @default(cuid())
+  dealId   String
+  deal     Deal      @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  title    String
+  status   String    @default("Todo") // Todo|Doing|Done
+  priority String    @default("Medium") // Low|Medium|High
+  assignee String?
+  dueDate  DateTime?
+}
+
+model Note {
+  id        String   @id @default(cuid())
+  dealId    String
+  deal      Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  kind      String   @default("MgmtCall") // MgmtCall|Internal|SiteVisit
+  title     String?
+  author    String
+  body      String
+  createdAt DateTime @default(now())
+}
+
+model ActivityLog {
+  id        String   @id @default(cuid())
+  dealId    String?
+  deal      Deal?    @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  actor     String
+  role      String?
+  action    String
+  target    String?
+  createdAt DateTime @default(now())
+}
