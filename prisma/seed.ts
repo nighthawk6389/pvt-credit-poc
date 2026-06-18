@@ -1,4 +1,14 @@
 import { PrismaClient } from "@prisma/client";
+import {
+  parse,
+  collectFields,
+  toParsedDefinition,
+  evaluate,
+  reconcile,
+  deriveCovenantStatus,
+  toJson,
+  type ThresholdStep,
+} from "../src/lib/covenants/index";
 
 const db = new PrismaClient();
 
@@ -36,6 +46,12 @@ async function main() {
   console.log("⟳ Resetting tables…");
   // Order matters for FK constraints.
   await db.activityLog.deleteMany();
+  await db.reportingDelivery.deleteMany();
+  await db.reportingObligation.deleteMany();
+  await db.covenantDefTest.deleteMany();
+  await db.covenantDefinition.deleteMany();
+  await db.ebitdaAdjustment.deleteMany();
+  await db.fundamentalFact.deleteMany();
   await db.iCVote.deleteMany();
   await db.note.deleteMany();
   await db.task.deleteMany();
@@ -545,6 +561,256 @@ async function seedFlagship(sponsors: Record<string, string>) {
     });
   }
   void covCapex;
+
+  // ───────────────────────────────────────────────────────────────────────
+  // Covenant Monitoring Suite — formula-driven, reconciled against reported.
+  // ───────────────────────────────────────────────────────────────────────
+  const actualFins = await db.financialStatement.findMany({
+    where: { borrowerId: borrower.id, isActual: true },
+    orderBy: { periodEnd: "asc" },
+  });
+
+  // Add-back bridge: Adjusted EBITDA (= fin.ebitda) built up from GAAP.
+  const addbacksFor = (adj: number) => {
+    const synergies = +(adj * 0.06).toFixed(1); // capped
+    const legal = +(adj * 0.03).toFixed(1); // capped
+    const proformaMA = +(adj * 0.11).toFixed(1); // aggressive, uncapped
+    return { synergies, legal, proformaMA, total: +(synergies + legal + proformaMA).toFixed(1) };
+  };
+
+  const JITTER_PERIOD = "Q2 2025"; // one quarter recomputes off-reported → recon-flag
+  const SPRINGING_PERIOD = "Q3 2025"; // revolver drawn > 40% → springing test activates
+
+  type PeriodFacts = { periodEnd: Date; label: string; facts: Record<string, number>; reportedLev: number };
+  const periodFacts: PeriodFacts[] = [];
+
+  for (const fin of actualFins) {
+    const adj = fin.ebitda;
+    const ab = addbacksFor(adj);
+    const gaap = +(adj - ab.total).toFixed(1);
+    const netDebt = +(fin.netLeverage * adj).toFixed(1);
+    const cash = +(fin.liquidity * 0.55).toFixed(1);
+    const jitter = fin.periodLabel === JITTER_PERIOD ? 1.04 : 1;
+    const totDebt = +((netDebt + cash) * jitter).toFixed(1);
+    const intExp = +(adj / fin.interestCoverage).toFixed(1);
+    const schedAmort = +(totDebt * 0.01).toFixed(1);
+    const taxes = +(adj * 0.06).toFixed(1);
+    const capex = fin.capex ?? +(adj * 0.08).toFixed(1);
+    const rcfUtil = fin.periodLabel === SPRINGING_PERIOD ? 45 : 28;
+
+    const facts: Record<string, number> = {
+      SALES_REV_TURN: fin.revenue,
+      EBITDA: gaap,
+      EBITDA_ADJ: adj,
+      TOT_DEBT: totDebt,
+      SR_DEBT: +(totDebt * 0.78).toFixed(1),
+      CASH: cash,
+      INT_EXP: intExp,
+      CAPEX: capex,
+      SCHED_AMORT: schedAmort,
+      FIXED_CHARGES: +(intExp + schedAmort + taxes).toFixed(1),
+      RCF_AVAILABLE: +(fin.liquidity * 0.45).toFixed(1),
+      RCF_UTIL_PCT: rcfUtil,
+    };
+    periodFacts.push({ periodEnd: fin.periodEnd, label: fin.periodLabel, facts, reportedLev: fin.netLeverage });
+
+    // Persist fundamental facts (independent BBG source).
+    for (const [fieldCode, value] of Object.entries(facts)) {
+      await db.fundamentalFact.create({
+        data: { borrowerId: borrower.id, periodEnd: fin.periodEnd, periodType: "LTM", fieldCode, value, source: "BBG" },
+      });
+    }
+
+    // Add-back ledger rows for the latest 4 quarters (waterfall shows the latest).
+    if (actualFins.indexOf(fin) >= actualFins.length - 4) {
+      const rows = [
+        { label: "Run-rate cost synergies", amount: ab.synergies, category: "Synergies", capped: true, aggressiveFlag: false, uncapped: false },
+        { label: "Non-recurring legal & restructuring", amount: ab.legal, category: "Non-recurring", capped: true, aggressiveFlag: false, uncapped: false },
+        { label: "Pro forma M&A EBITDA (run-rate, unrealized)", amount: ab.proformaMA, category: "ProFormaMA", capped: false, aggressiveFlag: true, uncapped: true },
+      ];
+      for (let r = 0; r < rows.length; r++) {
+        await db.ebitdaAdjustment.create({
+          data: { borrowerId: borrower.id, periodEnd: fin.periodEnd, order: r, source: "Compliance Certificate §1.01", ...rows[r] },
+        });
+      }
+    }
+  }
+
+  // One analyst override example (haircut the aggressive add-back on latest period).
+  const latest = periodFacts[periodFacts.length - 1];
+  if (latest) {
+    await db.fundamentalFact.create({
+      data: {
+        borrowerId: borrower.id, periodEnd: latest.periodEnd, periodType: "LTM",
+        fieldCode: "EBITDA_ADJ", value: +(latest.facts.EBITDA_ADJ - addbacksFor(latest.facts.EBITDA_ADJ).proformaMA).toFixed(1),
+        source: "Override", isOverride: true, note: "Analyst haircut: exclude unrealized pro forma M&A add-back.",
+      },
+    });
+  }
+
+  // Threshold step-down schedule (biting — borrower delevering against it).
+  const levSchedule: ThresholdStep[] = [
+    { effective: "2023-07-15", value: 5.75 },
+    { effective: "2024-12-31", value: 5.25 },
+    { effective: "2025-09-30", value: 4.5 },
+  ];
+
+  const defineCovenant = async (cfg: {
+    name: string; category: string; formula: string; operator: string; unit: string;
+    threshold: number; schedule?: ThresholdStep[] | null; springing?: object | null;
+    basket?: object | null; legacyId?: string | null; ebitdaBasis?: string; source?: string;
+  }) => {
+    const ast = parse(cfg.formula);
+    return db.covenantDefinition.create({
+      data: {
+        dealId: deal.id,
+        legacyCovenantId: cfg.legacyId ?? null,
+        name: cfg.name,
+        category: cfg.category,
+        formula: cfg.formula,
+        formulaAst: toJson(ast),
+        fieldRefs: toJson(collectFields(ast)),
+        ebitdaBasis: cfg.ebitdaBasis ?? "EBITDA_ADJ",
+        operator: cfg.operator,
+        unit: cfg.unit,
+        threshold: cfg.threshold,
+        thresholdSchedule: cfg.schedule ? toJson(cfg.schedule) : null,
+        springingCondition: cfg.springing ? toJson(cfg.springing) : null,
+        basketConfig: cfg.basket ? toJson(cfg.basket) : null,
+        source: cfg.source ?? null,
+      },
+    });
+  };
+
+  const defLev = await defineCovenant({
+    name: "Total Net Leverage", category: "Maintenance",
+    formula: "(TOT_DEBT - CASH) / EBITDA_ADJ", operator: "<=", unit: "x",
+    threshold: 5.75, schedule: levSchedule, legacyId: covLev.id,
+    source: "Credit Agreement §7.11(a)",
+  });
+  const defFccr = await defineCovenant({
+    name: "Fixed Charge Coverage", category: "Maintenance",
+    formula: "(EBITDA_ADJ - CAPEX) / FIXED_CHARGES", operator: ">=", unit: "x",
+    threshold: 1.25, legacyId: covFccr.id, source: "Credit Agreement §7.11(b)",
+  });
+  const defSpring = await defineCovenant({
+    name: "Springing Interest Coverage", category: "Springing",
+    formula: "EBITDA_ADJ / INT_EXP", operator: ">=", unit: "x",
+    threshold: 2.0, springing: { field: "RCF_UTIL_PCT", op: ">", value: 40 },
+    source: "Credit Agreement §7.11(c) (springs at 40% RCF utilization)",
+  });
+  const defIncur = await defineCovenant({
+    name: "Incurrence — Debt Basket (Ratio)", category: "Incurrence",
+    formula: "(TOT_DEBT - CASH) / EBITDA_ADJ", operator: "<=", unit: "x",
+    threshold: 4.5, basket: { type: "Debt", capFormula: "greater of $40MM and 100% of EBITDA_ADJ", builderBasis: "50% CNI" },
+    source: "Credit Agreement §6.01 (Permitted Indebtedness)",
+  });
+
+  // Generate reconciled CovenantDefTests via the real engine.
+  const financialDefs = [defLev, defFccr, defSpring, defIncur];
+  for (const defRow of financialDefs) {
+    const parsed = toParsedDefinition(defRow);
+    const periods =
+      defRow.category === "Incurrence" ? periodFacts.slice(-1) : periodFacts;
+    for (const pf of periods) {
+      const res = evaluate(parsed, pf.facts, pf.periodEnd);
+      // Reported = non-jittered recompute (what the borrower's cert shows).
+      const cleanFacts =
+        pf.label === JITTER_PERIOD
+          ? { ...pf.facts, TOT_DEBT: +(pf.facts.TOT_DEBT / 1.04).toFixed(1) }
+          : pf.facts;
+      const reported = evaluate(parsed, cleanFacts, pf.periodEnd).value;
+      const recon =
+        res.value != null && reported != null ? reconcile(res.value, reported) : null;
+      const status = deriveCovenantStatus({
+        category: parsed.category,
+        springingActive: res.springingActive,
+        recomputed: res.value,
+        thresholdApplied: res.thresholdApplied,
+        operator: parsed.operator,
+        headroomPct: res.headroomPct,
+        reconFlag: recon?.flag ?? false,
+        hasActual: true,
+      });
+      await db.covenantDefTest.create({
+        data: {
+          definitionId: defRow.id,
+          periodEnd: pf.periodEnd,
+          testDate: new Date(pf.periodEnd.getTime() + 45 * 864e5),
+          recomputedValue: res.value,
+          reportedValue: reported,
+          reconDelta: recon?.delta ?? null,
+          thresholdApplied: res.thresholdApplied,
+          formulaSnapshot: toJson({ formula: parsed.formula, inputs: res.inputs, value: res.value, thresholdApplied: res.thresholdApplied }),
+          headroomPct: res.headroomPct,
+          status,
+          note:
+            status === "Recon-flag"
+              ? "Recomputed leverage exceeds reported beyond tolerance — debt figure under review."
+              : status === "Near-breach"
+                ? "Tight headroom to the stepped-down threshold."
+                : null,
+        },
+      });
+    }
+    // One upcoming test (Q1 2026) for periodic covenants.
+    if (defRow.category !== "Incurrence") {
+      await db.covenantDefTest.create({
+        data: {
+          definitionId: defRow.id,
+          periodEnd: D(2026, 3, 31),
+          testDate: D(2026, 5, 15),
+          status: "Upcoming",
+          thresholdApplied: toParsedDefinition(defRow).thresholdSchedule
+            ? 4.5
+            : defRow.threshold,
+        },
+      });
+    }
+  }
+
+  // ── Reporting / information covenants ──
+  const reportingDefs = [
+    { name: "Quarterly Financial Statements", kind: "Quarterly FS", dueDaysAfter: 45 },
+    { name: "Annual Audited Financials", kind: "Annual Audited", dueDaysAfter: 90 },
+    { name: "Compliance Certificate", kind: "Compliance Cert", dueDaysAfter: 45 },
+  ];
+  for (const rd of reportingDefs) {
+    const def = await defineCovenant({
+      name: rd.name, category: "Reporting", formula: "1", operator: ">=", unit: "x", threshold: 1,
+      source: "Credit Agreement §6.01 (Reporting)",
+    });
+    const obligation = await db.reportingObligation.create({
+      data: { definitionId: def.id, kind: rd.kind, dueDaysAfter: rd.dueDaysAfter, fiscalYearEndMonth: 12 },
+    });
+    // Deliveries for the last 4 quarters: mostly on time, one Late, one Pending.
+    const recent = actualFins.slice(-3);
+    for (const fin of recent) {
+      const due = new Date(fin.periodEnd.getTime() + rd.dueDaysAfter * 864e5);
+      const isLate = rd.kind === "Compliance Cert" && fin.periodLabel === "Q2 2025";
+      const delivered = isLate
+        ? new Date(due.getTime() + 7 * 864e5)
+        : new Date(due.getTime() - 5 * 864e5);
+      await db.reportingDelivery.create({
+        data: {
+          obligationId: obligation.id,
+          periodEnd: fin.periodEnd,
+          dueDate: due,
+          deliveredDate: delivered,
+          status: isLate ? "Late" : "Delivered",
+        },
+      });
+    }
+    // Upcoming Q1 2026 — pending.
+    await db.reportingDelivery.create({
+      data: {
+        obligationId: obligation.id,
+        periodEnd: D(2026, 3, 31),
+        dueDate: D(2026, 5, 15),
+        status: "Pending",
+      },
+    });
+  }
 
   // Valuation (DCF + Yield).
   await db.valuation.createMany({

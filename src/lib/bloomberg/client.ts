@@ -3,6 +3,7 @@ import type {
   CreditProfile,
   DefaultRisk,
   DirectLendingComp,
+  FundamentalSet,
   PortfolioRisk,
   StructuringQuote,
 } from "./types";
@@ -59,6 +60,64 @@ export class MockBloombergClient implements BloombergClient {
   private async delay() {
     if (this.latencyMs > 0)
       await new Promise((r) => setTimeout(r, this.latencyMs));
+  }
+
+  async getFundamentals(input: {
+    borrower: string;
+    periodEnd: string;
+    periodType?: "Q" | "A" | "LTM";
+    anchor?: import("./types").FundamentalAnchor;
+    overrides?: Record<string, number>;
+  }): Promise<FundamentalSet> {
+    await this.delay();
+    const rng = seeded(`FA:${input.borrower}:${input.periodEnd}`);
+    const a = input.anchor;
+
+    // Back-solve a coherent field set from the reported anchor so the
+    // independent recompute lands ~0.5-1.5% off reported (the recon delta),
+    // rather than diverging wildly. Without an anchor, synthesize plausibly.
+    const ebitda = a?.ebitda ?? 30 + rng() * 30;
+    const netLeverage = a?.netLeverage ?? 3.5 + rng() * 2;
+    const coverage = a?.interestCoverage ?? 1.8 + rng();
+    const liquidity = a?.liquidity ?? 15 + rng() * 20;
+    const capex = a?.capex ?? ebitda * 0.08;
+    const revenue = a?.revenue ?? ebitda / (0.18 + rng() * 0.06);
+
+    // tiny deterministic jitter applied to ONE field (total debt) so the
+    // recomputed leverage differs slightly from the reported figure.
+    const jitter = 1 + (rng() - 0.5) * 0.02; // ±1%
+    const netDebt = netLeverage * ebitda;
+    const cash = +(liquidity * 0.55).toFixed(1);
+    const totDebt = +((netDebt + cash) * jitter).toFixed(1);
+    const intExp = +(ebitda / coverage).toFixed(1);
+    const schedAmort = +(totDebt * 0.01).toFixed(1);
+    const taxes = +(ebitda * 0.06).toFixed(1);
+
+    const fields: Record<string, number> = {
+      SALES_REV_TURN: +revenue.toFixed(1),
+      EBITDA: +ebitda.toFixed(1),
+      // EBITDA_ADJ is filled by adding the add-back ledger downstream; default to GAAP here.
+      EBITDA_ADJ: +ebitda.toFixed(1),
+      TOT_DEBT: totDebt,
+      SR_DEBT: +(totDebt * 0.78).toFixed(1),
+      CASH: cash,
+      INT_EXP: intExp,
+      CAPEX: +capex.toFixed(1),
+      SCHED_AMORT: schedAmort,
+      FIXED_CHARGES: +(intExp + schedAmort + taxes).toFixed(1),
+      RCF_AVAILABLE: +(liquidity * 0.45).toFixed(1),
+      RCF_UTIL_PCT: +(rng() * 35).toFixed(1),
+    };
+
+    if (input.overrides) Object.assign(fields, input.overrides);
+
+    return {
+      borrower: input.borrower,
+      periodEnd: input.periodEnd,
+      periodType: input.periodType ?? "LTM",
+      fields,
+      source: "BBG",
+    };
   }
 
   async getDirectLendingComps(sector: string): Promise<DirectLendingComp[]> {

@@ -1,4 +1,12 @@
-import { ArrowDownRight, ArrowRight, ArrowUpRight, AlertTriangle } from "lucide-react";
+import {
+  ArrowDownRight,
+  ArrowRight,
+  ArrowUpRight,
+  AlertTriangle,
+  Scale,
+  Clock,
+  MinusCircle,
+} from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -18,9 +26,19 @@ export function StatusBadge({ status }: { status: string }) {
 }
 
 export function CovenantChip({ status }: { status: string }) {
+  const Icon =
+    status === "Breach" || status === "Missing"
+      ? AlertTriangle
+      : status === "Recon-flag"
+        ? Scale
+        : status === "Late"
+          ? Clock
+          : status === "N/A-springing"
+            ? MinusCircle
+            : null;
   return (
-    <Badge variant={covenantVariant(status)} className="gap-1">
-      {status === "Breach" && <AlertTriangle className="size-3" />}
+    <Badge variant={covenantVariant(status)} className="gap-1 whitespace-nowrap">
+      {Icon && <Icon className="size-3" />}
       {status}
     </Badge>
   );

@@ -25,87 +25,90 @@ model Sponsor {
 }
 
 model Borrower {
-  id          String               @id @default(cuid())
-  name        String
-  sector      String
-  description String?
-  hqCity      String?
-  website     String?
-  ceo         String?
-  founded     Int?
-  sponsorId   String?
-  sponsor     Sponsor?             @relation(fields: [sponsorId], references: [id])
-  deals       Deal[]
-  facilities  Facility[]
-  financials  FinancialStatement[]
-  valuations  Valuation[]
-  riskRating  String? // internal 1-7 scale
-  riskTrend   String? // "Improving" | "Stable" | "Deteriorating"
-  watchlist   Boolean              @default(false)
-  createdAt   DateTime             @default(now())
+  id                String               @id @default(cuid())
+  name              String
+  sector            String
+  description       String?
+  hqCity            String?
+  website           String?
+  ceo               String?
+  founded           Int?
+  sponsorId         String?
+  sponsor           Sponsor?             @relation(fields: [sponsorId], references: [id])
+  deals             Deal[]
+  facilities        Facility[]
+  financials        FinancialStatement[]
+  valuations        Valuation[]
+  fundamentals      FundamentalFact[]
+  ebitdaAdjustments EbitdaAdjustment[]
+  riskRating        String? // internal 1-7 scale
+  riskTrend         String? // "Improving" | "Stable" | "Deteriorating"
+  watchlist         Boolean              @default(false)
+  createdAt         DateTime             @default(now())
 }
 
 model Deal {
-  id           String           @id @default(cuid())
-  codeName     String           @unique // "Project Atlas"
-  borrowerId   String
-  borrower     Borrower         @relation(fields: [borrowerId], references: [id])
-  sponsorId    String?
-  sponsor      Sponsor?         @relation(fields: [sponsorId], references: [id])
-  stage        String // Sourcing|Screening|Diligence|IC|Docs|Closed|Passed
-  status       String           @default("Active") // Active|On Hold|Closed|Passed
-  facilityType String // Unitranche | First Lien TL | ...
-  dealSize     Float // committed $MM
+  id            String               @id @default(cuid())
+  codeName      String               @unique // "Project Atlas"
+  borrowerId    String
+  borrower      Borrower             @relation(fields: [borrowerId], references: [id])
+  sponsorId     String?
+  sponsor       Sponsor?             @relation(fields: [sponsorId], references: [id])
+  stage         String // Sourcing|Screening|Diligence|IC|Docs|Closed|Passed
+  status        String               @default("Active") // Active|On Hold|Closed|Passed
+  facilityType  String // Unitranche | First Lien TL | ...
+  dealSize      Float // committed $MM
   useOfProceeds String?
-  targetClose  DateTime?
-  leadName     String?
-  probability  Int?             @default(50)
-  isPrivileged Boolean          @default(true) // info-barrier flag
-  thesis       String?
-  facilities   Facility[]
-  team         DealTeamMember[]
-  folders      Folder[]
-  documents    Document[]
-  ddqItems     DDQItem[]
-  memo         CreditMemo?
-  covenants    Covenant[]
-  votes        ICVote[]
-  tasks        Task[]
-  notes        Note[]
-  events       LifecycleEvent[]
-  cashflows    CashFlowSchedule[]
-  activity     ActivityLog[]
-  createdAt    DateTime         @default(now())
+  targetClose   DateTime?
+  leadName      String?
+  probability   Int?                 @default(50)
+  isPrivileged  Boolean              @default(true) // info-barrier flag
+  thesis        String?
+  facilities    Facility[]
+  team          DealTeamMember[]
+  folders       Folder[]
+  documents     Document[]
+  ddqItems      DDQItem[]
+  memo          CreditMemo?
+  covenants     Covenant[]
+  covenantDefs  CovenantDefinition[]
+  votes         ICVote[]
+  tasks         Task[]
+  notes         Note[]
+  events        LifecycleEvent[]
+  cashflows     CashFlowSchedule[]
+  activity      ActivityLog[]
+  createdAt     DateTime             @default(now())
 }
 
 model Facility {
-  id         String    @id @default(cuid())
-  dealId     String
-  deal       Deal      @relation(fields: [dealId], references: [id], onDelete: Cascade)
-  borrowerId String?
-  borrower   Borrower? @relation(fields: [borrowerId], references: [id])
-  name       String
-  type       String // Unitranche|Revolver|FirstLienTL|DelayedDraw|SecondLien
-  seniority  String // First Lien|Second Lien|Unsecured
-  commitment Float // $MM
-  funded     Float     @default(0)
-  spreadBps  Int
-  floorBps   Int       @default(100)
-  oidPct     Float     @default(0)
-  pikBps     Int       @default(0)
-  upfrontFeeBps Int    @default(0)
-  maturity   DateTime?
-  order      Int       @default(0)
+  id            String    @id @default(cuid())
+  dealId        String
+  deal          Deal      @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  borrowerId    String?
+  borrower      Borrower? @relation(fields: [borrowerId], references: [id])
+  name          String
+  type          String // Unitranche|Revolver|FirstLienTL|DelayedDraw|SecondLien
+  seniority     String // First Lien|Second Lien|Unsecured
+  commitment    Float // $MM
+  funded        Float     @default(0)
+  spreadBps     Int
+  floorBps      Int       @default(100)
+  oidPct        Float     @default(0)
+  pikBps        Int       @default(0)
+  upfrontFeeBps Int       @default(0)
+  maturity      DateTime?
+  order         Int       @default(0)
 }
 
 model DealTeamMember {
-  id          String  @id @default(cuid())
+  id          String    @id @default(cuid())
   dealId      String
-  deal        Deal    @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  deal        Deal      @relation(fields: [dealId], references: [id], onDelete: Cascade)
   name        String
   title       String?
   role        String // Deal Lead|Analyst|IC Member|Compliance|Read-only
-  wallCrossed Boolean @default(true)
+  wallCrossed Boolean   @default(true)
   crossedAt   DateTime?
 }
 
@@ -286,4 +289,107 @@ model ActivityLog {
   action    String
   target    String?
   createdAt DateTime @default(now())
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Covenant Monitoring Suite
+// Formula-driven covenant definitions evaluated over Bloomberg-style
+// fundamental fields, reconciled against borrower-reported figures.
+// JSON-shaped columns are stored as stringified String (SQLite) and parsed
+// via typed helpers in src/lib/covenants/json.ts.
+// ─────────────────────────────────────────────────────────────────────────
+
+model CovenantDefinition {
+  id                  String               @id @default(cuid())
+  dealId              String
+  deal                Deal                 @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  legacyCovenantId    String? // bridge to the legacy Covenant row (cross-portfolio calendar)
+  name                String
+  category            String // Maintenance | Springing | Incurrence | Reporting
+  formula             String // human-readable, e.g. "(TOT_DEBT - CASH) / EBITDA_ADJ"
+  formulaAst          String // JSON: serialized AST
+  fieldRefs           String // JSON: string[] of field codes consumed
+  ebitdaBasis         String               @default("EBITDA_ADJ") // mnemonic feeding the ratio
+  operator            String // "<=" | ">="
+  unit                String // "x" | "$MM" | "%"
+  threshold           Float // fallback / current threshold
+  thresholdSchedule   String? // JSON: [{ effective: ISO, value: number }]
+  frequency           String               @default("Quarterly")
+  springingCondition  String? // JSON: { field, op, value } e.g. RCF_UTIL_PCT > 40
+  basketConfig        String? // JSON: { type, capFormula, builderBasis }
+  source              String? // citation: doc id + section
+  active              Boolean              @default(true)
+  createdAt           DateTime             @default(now())
+  tests               CovenantDefTest[]
+  reportingObligation ReportingObligation?
+}
+
+model CovenantDefTest {
+  id               String             @id @default(cuid())
+  definitionId     String
+  definition       CovenantDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+  periodEnd        DateTime
+  testDate         DateTime
+  recomputedValue  Float? // engine result from fundamentals via formula
+  reportedValue    Float? // borrower compliance-cert figure
+  reconDelta       Float? // recomputed - reported (signed)
+  thresholdApplied Float? // resolved from schedule at periodEnd
+  formulaSnapshot  String? // JSON: { formula, inputs:{code:value}, steps }
+  headroomPct      Float?
+  status           String             @default("Upcoming")
+  // Pass|Breach|Waived|Upcoming|Near-breach|Recon-flag|Late|Missing|N/A-springing
+  note             String?
+
+  @@unique([definitionId, periodEnd])
+}
+
+model FundamentalFact {
+  id         String   @id @default(cuid())
+  borrowerId String
+  borrower   Borrower @relation(fields: [borrowerId], references: [id], onDelete: Cascade)
+  periodEnd  DateTime
+  periodType String   @default("LTM") // Q | A | LTM
+  fieldCode  String // mnemonic: SALES_REV_TURN, EBITDA, EBITDA_ADJ, TOT_DEBT, CASH...
+  value      Float
+  source     String   @default("BBG") // BBG | Cert | Override | Computed
+  isOverride Boolean  @default(false)
+  note       String?
+
+  @@index([borrowerId, periodEnd, fieldCode])
+}
+
+model EbitdaAdjustment {
+  id             String   @id @default(cuid())
+  borrowerId     String
+  borrower       Borrower @relation(fields: [borrowerId], references: [id], onDelete: Cascade)
+  periodEnd      DateTime
+  order          Int      @default(0)
+  label          String
+  amount         Float // $MM, added to GAAP EBITDA
+  category       String // Synergies | Non-recurring | ProFormaMA | StockComp | Other
+  capped         Boolean  @default(false) // counts toward the cap basket
+  aggressiveFlag Boolean  @default(false) // analyst quality concern
+  uncapped       Boolean  @default(false) // contractually uncapped
+  source         String?
+}
+
+model ReportingObligation {
+  id                 String              @id @default(cuid())
+  definitionId       String              @unique
+  definition         CovenantDefinition  @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+  kind               String // Quarterly FS | Annual Audited | Compliance Cert | Budget
+  dueDaysAfter       Int // 45 / 60 / 90
+  fiscalYearEndMonth Int                 @default(12)
+  deliveries         ReportingDelivery[]
+}
+
+model ReportingDelivery {
+  id            String              @id @default(cuid())
+  obligationId  String
+  obligation    ReportingObligation @relation(fields: [obligationId], references: [id], onDelete: Cascade)
+  periodEnd     DateTime
+  dueDate       DateTime
+  deliveredDate DateTime?
+  status        String              @default("Pending") // Delivered | Late | Missing | Pending
+  documentId    String?
 }
