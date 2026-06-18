@@ -104,7 +104,7 @@ export default async function CompliancePackPage({
               </thead>
               <tbody>
                 {reporting.map((r) => {
-                  const recent = r.reporting?.deliveries.find((d) => d.status !== "Pending");
+                  const recent = r.reporting?.deliveries.findLast((d) => d.status !== "Pending");
                   return (
                     <tr key={r.id} className="border-b border-border/40">
                       <td className="py-2">{r.reporting?.kind}</td>

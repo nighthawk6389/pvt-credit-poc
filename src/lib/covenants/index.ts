@@ -37,8 +37,16 @@ export function toParsedDefinition(row: DefinitionRow): ParsedDefinition {
   let ast = parseAst(row.formulaAst);
   let fieldRefs = parseFieldRefs(row.fieldRefs);
   if (!ast) {
-    ast = parse(row.formula);
-    fieldRefs = collectFields(ast);
+    // Re-parse from the formula text. If that also fails (corrupt/unknown
+    // field), fall back to a safe constant AST so a bad row never 500s a page;
+    // evaluation will simply yield a null value for the covenant.
+    try {
+      ast = parse(row.formula);
+      fieldRefs = collectFields(ast);
+    } catch {
+      ast = { kind: "num", value: NaN };
+      fieldRefs = [];
+    }
   }
   return {
     id: row.id,
