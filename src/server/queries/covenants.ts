@@ -9,6 +9,8 @@ import {
   parseSchedule,
   parseSpringing,
   parseBasket,
+  computeAdjustedEbitda,
+  assembleLtmSeries,
   type FactMap,
   type ParsedDefinition,
   type CovenantStatus,
@@ -16,19 +18,67 @@ import {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-/** Group a borrower's FundamentalFacts into per-period fact maps, applying
- *  overrides on top of BBG values. Key = periodEnd ISO. */
-async function factsByPeriod(borrowerId: string): Promise<Map<string, FactMap>> {
+/**
+ * Build a borrower's per-period fact maps that the engine evaluates. This is
+ * the single source of truth for fact assembly, used by every covenant read
+ * AND by reconciliation, so live recompute and persisted tests never diverge:
+ *  1. Group FundamentalFacts by period; if facts are stored QUARTERLY, assemble
+ *     LTM (flow fields summed over trailing 4 quarters, stock fields latest).
+ *  2. Derive EBITDA_ADJ = GAAP + allowed add-backs, with a binding cap, from
+ *     the EbitdaAdjustment ledger (so the cap actually constrains the ratio).
+ *  Precedence for any field: analyst Override > computed/assembled > BBG.
+ */
+export async function buildFactMaps(borrowerId: string): Promise<Map<string, FactMap>> {
   const facts = await db.fundamentalFact.findMany({
     where: { borrowerId },
     orderBy: [{ periodEnd: "asc" }, { isOverride: "asc" }],
   });
-  const map = new Map<string, FactMap>();
+
+  // Base (non-override) facts grouped by period.
+  const base = new Map<string, FactMap>();
+  const overrides = new Map<string, FactMap>();
+  const periodTypeByPeriod = new Map<string, string>();
   for (const f of facts) {
     const key = f.periodEnd.toISOString();
-    const m = map.get(key) ?? {};
-    // overrides sort last ⇒ they win
+    periodTypeByPeriod.set(key, f.periodType);
+    const target = f.isOverride ? overrides : base;
+    const m = target.get(key) ?? {};
     m[f.fieldCode] = f.value;
+    target.set(key, m);
+  }
+
+  // If the borrower's facts are quoted quarterly, roll them up to an LTM basis.
+  const allQuarterly =
+    base.size > 0 && [...periodTypeByPeriod.values()].every((t) => t === "Q");
+  let assembled = base;
+  if (allQuarterly) {
+    assembled = new Map();
+    const series = assembleLtmSeries(
+      [...base.entries()].map(([periodEnd, f]) => ({ periodEnd, facts: f })),
+    );
+    for (const s of series) assembled.set(s.periodEnd, s.facts);
+  }
+
+  // Derive EBITDA_ADJ from the add-back ledger (cap binds), per period.
+  const adjustments = await db.ebitdaAdjustment.findMany({ where: { borrowerId } });
+  const ledgerByPeriod = new Map<string, { amount: number; capped: boolean; uncapped: boolean }[]>();
+  for (const a of adjustments) {
+    const key = a.periodEnd.toISOString();
+    const arr = ledgerByPeriod.get(key) ?? [];
+    arr.push({ amount: a.amount, capped: a.capped, uncapped: a.uncapped });
+    ledgerByPeriod.set(key, arr);
+  }
+
+  const map = new Map<string, FactMap>();
+  for (const [key, f] of assembled.entries()) {
+    const m = { ...f };
+    const ledger = ledgerByPeriod.get(key);
+    if (ledger && m.EBITDA !== undefined) {
+      m.EBITDA_ADJ = computeAdjustedEbitda(m.EBITDA, ledger).adjEbitda;
+    }
+    // analyst overrides win last
+    const ov = overrides.get(key);
+    if (ov) Object.assign(m, ov);
     map.set(key, m);
   }
   return map;
@@ -166,7 +216,7 @@ export async function getCovenantSuite(dealId: string, role: Role) {
   if (!deal) return { deal: null, blocked: false as const };
   if (!canSeeDeal(role, deal)) return { deal: null, blocked: true as const };
 
-  const periodMap = await factsByPeriod(deal.borrower.id);
+  const periodMap = await buildFactMaps(deal.borrower.id);
   const adjustments = await db.ebitdaAdjustment.findMany({
     where: { borrowerId: deal.borrower.id },
     orderBy: [{ periodEnd: "asc" }, { order: "asc" }],
@@ -268,7 +318,7 @@ export async function getForecastInputs(dealId: string, role: Role) {
   if (!deal) return { blocked: false as const, deal: null };
   if (!canSeeDeal(role, deal)) return { blocked: true as const, deal: null };
 
-  const periodMap = await factsByPeriod(deal.borrower.id);
+  const periodMap = await buildFactMaps(deal.borrower.id);
   const definitions: ParsedDefinition[] = deal.covenantDefs.map((d) => toParsedDefinition(d));
 
   // Include actual + projected periods. For projected periods (no facts yet),

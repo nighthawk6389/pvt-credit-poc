@@ -18,6 +18,7 @@ import {
   type SpringingCondition,
 } from "@/lib/covenants";
 import { guard, logActivity } from "./helpers";
+import { buildFactMaps } from "@/server/queries/covenants";
 
 function bust(dealId: string) {
   revalidatePath(`/deals/${dealId}/covenants`);
@@ -167,17 +168,9 @@ async function runReconciliationInternal(dealId: string, onlyDefId?: string) {
   for (const def of defs) {
     if (def.category === "Reporting") continue;
     const parsed = toParsedDefinition(def);
-    const facts = await db.fundamentalFact.findMany({
-      where: { borrowerId: def.deal.borrower.id },
-      orderBy: [{ periodEnd: "asc" }, { isOverride: "asc" }],
-    });
-    const byPeriod = new Map<string, Record<string, number>>();
-    for (const f of facts) {
-      const k = f.periodEnd.toISOString();
-      const m = byPeriod.get(k) ?? {};
-      m[f.fieldCode] = f.value;
-      byPeriod.set(k, m);
-    }
+    // Same fact assembly as the live read path (LTM rollup + ledger-derived
+    // EBITDA_ADJ + overrides), so persisted tests never diverge from live recompute.
+    const byPeriod = await buildFactMaps(def.deal.borrower.id);
     for (const t of def.tests) {
       if (t.status === "Upcoming" || t.status === "Waived") continue;
       const fm = byPeriod.get(t.periodEnd.toISOString()) ?? {};

@@ -1,6 +1,7 @@
 import { AlertTriangle, Lock, Unlock } from "lucide-react";
 
 import { cn, fmtMM } from "@/lib/utils";
+import { computeAdjustedEbitda } from "@/lib/covenants";
 import { Badge } from "@/components/ui/badge";
 
 export type Adjustment = {
@@ -27,13 +28,18 @@ export function AddbackWaterfall({
   adjustments: Adjustment[];
   capPctOfGaap?: number;
 }) {
-  const totalAddbacks = adjustments.reduce((s, a) => s + a.amount, 0);
-  const adjEbitda = gaapEbitda + totalAddbacks;
-  const cappedTotal = adjustments.filter((a) => a.capped).reduce((s, a) => s + a.amount, 0);
-  const capLimit = (gaapEbitda * capPctOfGaap) / 100;
-  const capBreached = cappedTotal > capLimit;
-  const uncappedTotal = adjustments.filter((a) => a.uncapped).reduce((s, a) => s + a.amount, 0);
-  const max = adjEbitda * 1.05;
+  // Same cap math the engine uses to derive EBITDA_ADJ, so the bridge total
+  // equals the figure that actually feeds the covenant ratio.
+  const adj = computeAdjustedEbitda(gaapEbitda, adjustments, capPctOfGaap);
+  const totalAddbacks = adj.totalAddbacks;
+  const adjEbitda = adj.adjEbitda; // capped / allowed
+  const cappedTotal = adj.cappedTotal;
+  const capLimit = adj.capLimit;
+  const capBreached = adj.capBinds;
+  const disallowed = adj.disallowedCapped;
+  const uncappedTotal = adj.uncappedTotal;
+  const grossAdj = gaapEbitda + totalAddbacks;
+  const max = grossAdj * 1.05;
 
   // running cumulative for floating bars (immutable: start = GAAP + prior add-backs)
   const segs = adjustments.map((a, i) => ({
@@ -47,8 +53,8 @@ export function AddbackWaterfall({
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Mini label="GAAP EBITDA" value={fmtMM(gaapEbitda)} />
-        <Mini label="Total add-backs" value={fmtMM(totalAddbacks)} sub={`${((totalAddbacks / gaapEbitda) * 100).toFixed(0)}% of GAAP`} />
-        <Mini label="Adjusted EBITDA" value={fmtMM(adjEbitda)} accent />
+        <Mini label="Add-backs (allowed)" value={fmtMM(adj.allowedAddbacks)} sub={disallowed > 0 ? `${fmtMM(disallowed)} disallowed` : `${gaapEbitda ? ((totalAddbacks / gaapEbitda) * 100).toFixed(0) : 0}% of GAAP`} tone={disallowed > 0 ? "danger" : undefined} />
+        <Mini label="Adjusted EBITDA" value={fmtMM(adjEbitda)} sub="feeds covenant" accent />
         <Mini
           label={`Capped add-backs / ${capPctOfGaap}% cap`}
           value={`${fmtMM(cappedTotal)} / ${fmtMM(capLimit)}`}
@@ -99,7 +105,7 @@ export function AddbackWaterfall({
           {capBreached && (
             <div className="flex items-center gap-2 rounded-md border border-[color-mix(in_oklch,var(--danger)_30%,transparent)] bg-[color-mix(in_oklch,var(--danger)_8%,transparent)] px-3 py-2 text-xs">
               <AlertTriangle className="size-3.5 text-[var(--danger)]" />
-              Capped add-backs ({fmtMM(cappedTotal)}) exceed the {capPctOfGaap}% cap ({fmtMM(capLimit)}). Excess should be disallowed.
+              Capped add-backs ({fmtMM(cappedTotal)}) exceed the {capPctOfGaap}% cap ({fmtMM(capLimit)}). {fmtMM(disallowed)} disallowed — Adjusted EBITDA held to {fmtMM(adjEbitda)}, tightening every covenant that scales by it.
             </div>
           )}
           {uncappedTotal > 0 && (

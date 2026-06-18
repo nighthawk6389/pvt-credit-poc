@@ -10,6 +10,8 @@ export * from "./reconcile";
 export * from "./status";
 export * from "./forecast";
 export * from "./json";
+export * from "./adjust";
+export * from "./aggregate";
 
 import type { CovenantCategory, Operator, ParsedDefinition } from "./types";
 import { parseAst, parseFieldRefs, parseSchedule, parseSpringing } from "./json";
