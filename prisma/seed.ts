@@ -636,18 +636,6 @@ async function seedFlagship(sponsors: Record<string, string>) {
     }
   }
 
-  // One analyst override example (haircut the aggressive add-back on latest period).
-  const latest = periodFacts[periodFacts.length - 1];
-  if (latest) {
-    await db.fundamentalFact.create({
-      data: {
-        borrowerId: borrower.id, periodEnd: latest.periodEnd, periodType: "LTM",
-        fieldCode: "EBITDA_ADJ", value: +(latest.facts.EBITDA_ADJ - addbacksFor(latest.facts.EBITDA_ADJ).proformaMA).toFixed(1),
-        source: "Override", isOverride: true, note: "Analyst haircut: exclude unrealized pro forma M&A add-back.",
-      },
-    });
-  }
-
   // Threshold step-down schedule (biting — borrower delevering against it).
   const levSchedule: ThresholdStep[] = [
     { effective: "2023-07-15", value: 5.75 },
