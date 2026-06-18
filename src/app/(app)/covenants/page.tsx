@@ -3,8 +3,11 @@ import { AlertTriangle, CalendarClock, CheckCircle2 } from "lucide-react";
 
 import { getActiveRole } from "@/lib/auth/server";
 import { getCovenantCalendar } from "@/server/queries/portfolio";
+import { getCovenantBoard } from "@/server/queries/covenants";
 import { fmtDate, fmtPct } from "@/lib/utils";
 import { PageHeader } from "@/components/shell/page-header";
+import { BoardHeatmap } from "@/components/covenants/board-heatmap";
+import { Scale } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -25,6 +28,7 @@ import { CovenantChip } from "@/components/deal/badges";
 export default async function CovenantsCalendarPage() {
   const role = await getActiveRole();
   const tests = await getCovenantCalendar(role);
+  const board = await getCovenantBoard(role);
 
   const tested = tests.filter((t) => t.status === "Pass" || t.status === "Breach");
   const breaches = tests.filter((t) => t.status === "Breach");
@@ -48,6 +52,28 @@ export default async function CovenantsCalendarPage() {
         title="Covenant Compliance Calendar"
         description={`Cross-portfolio monitoring · ${tests.length} data points tracked across the book`}
       />
+
+      {/* Covenant engine board — recompute & reconciliation across the book */}
+      {board.rows.length > 0 && (
+        <Card className="mb-4">
+          <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Scale className="size-4 text-[var(--info)]" />
+                Covenant Engine Board
+              </CardTitle>
+              <CardDescription>
+                Recomputed & reconciled across {board.stats.deals} deals ·{" "}
+                {board.stats.breaches} breach · {board.stats.nearBreaches} near-breach ·{" "}
+                {board.stats.reconFlags} recon-flag · {board.stats.reportingLate} late filing
+              </CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <BoardHeatmap rows={board.rows} />
+          </CardContent>
+        </Card>
+      )}
 
       <div className="mb-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Stat label="Data points" value={String(tests.length)} icon={<CalendarClock className="size-4" />} />
