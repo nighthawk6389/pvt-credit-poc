@@ -58,9 +58,40 @@ export interface StructuringQuote {
   netLeverage: number;
 }
 
+/** FA <GO> — standardized fundamental field set for a borrower/period. */
+export interface FundamentalSet {
+  borrower: string;
+  periodEnd: string; // ISO
+  periodType: "Q" | "A" | "LTM";
+  fields: Record<string, number>; // mnemonic → value ($MM unless % / x)
+  source: "BBG";
+}
+
+/** The reported figures a covenant engine anchors the fundamental recompute to. */
+export interface FundamentalAnchor {
+  ebitda: number;
+  netLeverage: number;
+  interestCoverage: number;
+  liquidity: number;
+  capex?: number | null;
+  revenue?: number | null;
+}
+
 export interface BloombergClient {
   /** DLEN <GO> */
   getDirectLendingComps(sector: string): Promise<DirectLendingComp[]>;
+  /**
+   * FA <GO> — pull standardized fundamental fields for a borrower/period.
+   * `anchor` (the borrower's reported financials) keeps the independent
+   * recompute coherent; `overrides` apply field-level analyst overrides.
+   */
+  getFundamentals(input: {
+    borrower: string;
+    periodEnd: string;
+    periodType?: "Q" | "A" | "LTM";
+    anchor?: FundamentalAnchor;
+    overrides?: Record<string, number>;
+  }): Promise<FundamentalSet>;
   /** PORT <GO> */
   getPortfolioRisk(input: {
     positions: { sector: string; spreadBps: number; leverage: number; yieldPct: number; size: number; rating?: string }[];

@@ -18,9 +18,66 @@ export class MockCopilotService implements CopilotService {
         return this.draftMemo(req);
       case "extract_covenants":
         return this.extractCovenants(req);
+      case "extract_covenant_terms":
+        return this.extractCovenantTerms(req);
+      case "extract_cert_figures":
+        return this.extractCertFigures(req);
       case "summarize":
         return this.summarize(req);
     }
+  }
+
+  // Richer than extractCovenants — returns formula-ready definition drafts
+  // (formula, schedule, springing condition) to pre-fill CovenantDefinition.
+  private extractCovenantTerms(req: CopilotRequest): CopilotResponse {
+    const structured = [
+      {
+        name: "Total Net Leverage",
+        category: "Maintenance",
+        formula: "(TOT_DEBT - CASH) / EBITDA_ADJ",
+        operator: "<=",
+        unit: "x",
+        threshold: 5.75,
+        thresholdSchedule: [
+          { effective: "2024-12-31", value: 5.25 },
+          { effective: "2025-09-30", value: 4.5 },
+        ],
+        source: "Credit Agreement §7.11(a)",
+      },
+      {
+        name: "Springing Interest Coverage",
+        category: "Springing",
+        formula: "EBITDA_ADJ / INT_EXP",
+        operator: ">=",
+        unit: "x",
+        threshold: 2.0,
+        springingCondition: { field: "RCF_UTIL_PCT", op: ">", value: 40 },
+        source: "Credit Agreement §7.11(c)",
+      },
+    ];
+    return {
+      text: `Extracted ${structured.length} covenant definitions from the credit agreement, including a stepped-down leverage schedule and a springing interest-coverage test (40% RCF utilization trigger). Review the formulas and thresholds before saving to the engine.`,
+      structured,
+      citations: this.buildCitations(req),
+    };
+  }
+
+  private extractCertFigures(req: CopilotRequest): CopilotResponse {
+    const structured = {
+      periodEnd: "2025-12-31",
+      periodLabel: "Q4 2025",
+      reportedValues: { "Total Net Leverage": 4.41, "Fixed Charge Coverage": 1.48 },
+      addBacks: [
+        { label: "Run-rate cost synergies", amount: 2.5, category: "Synergies" },
+        { label: "Non-recurring legal & restructuring", amount: 1.25, category: "Non-recurring" },
+        { label: "Pro forma M&A EBITDA (run-rate, unrealized)", amount: 4.6, category: "ProFormaMA" },
+      ],
+    };
+    return {
+      text: `Parsed the Q4 2025 compliance certificate: reported total net leverage of 4.41x and FCCR of 1.48x, plus three EBITDA add-backs. Note the pro forma M&A add-back ($4.6MM) is run-rate/unrealized — flag for the add-back bridge.`,
+      structured,
+      citations: this.buildCitations(req),
+    };
   }
 
   private buildCitations(req: CopilotRequest): CopilotCitation[] {

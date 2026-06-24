@@ -182,6 +182,34 @@
   }
 }
 
+/* Print: strip app chrome so the Compliance Pack prints clean. */
+@media print {
+  aside,
+  header,
+  .print-hide {
+    display: none !important;
+  }
+  main {
+    padding: 0 !important;
+  }
+  .print-page {
+    box-shadow: none !important;
+    border: none !important;
+  }
+  :root,
+  .dark {
+    --background: #ffffff;
+    --foreground: #111111;
+    --card: #ffffff;
+    --muted-foreground: #444444;
+    --border: #d0d0d0;
+  }
+  body {
+    background: #fff !important;
+    color: #111 !important;
+  }
+}
+
 @layer utilities {
   .scrollbar-thin {
     scrollbar-width: thin;

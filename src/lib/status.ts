@@ -40,6 +40,20 @@ export function covenantVariant(status: string): BadgeVariant {
       return "success";
     case "Breach":
       return "danger";
+    case "Near-breach":
+      return "warning";
+    case "Recon-flag":
+      return "warning";
+    case "Late":
+      return "danger";
+    case "Missing":
+      return "danger";
+    case "Delivered":
+      return "success";
+    case "Pending":
+      return "muted";
+    case "N/A-springing":
+      return "muted";
     case "Waived":
       return "warning";
     case "Upcoming":

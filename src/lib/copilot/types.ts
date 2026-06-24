@@ -2,6 +2,8 @@ export type CopilotTask =
   | "doc_qa"
   | "draft_ic_memo"
   | "extract_covenants"
+  | "extract_covenant_terms"
+  | "extract_cert_figures"
   | "summarize";
 
 export interface CopilotRequest {
