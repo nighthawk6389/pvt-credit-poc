@@ -1,5 +1,7 @@
 // Private Credit Deal Room — data model (POC).
-// SQLite: enums modeled as String (validated in TS), money as Float.
+// Postgres. Enums are modeled as String (validated in TS via lib/status.ts and
+// zod) and money as Float; migrating those to native enums and Decimal is a
+// separate, deliberate change — see docs/data-model/ for the canonical target.
 generator client {
   provider      = "prisma-client-js"
   // "native" for local dev; rhel target for Vercel's serverless runtime.
@@ -7,7 +9,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -295,7 +297,7 @@ model ActivityLog {
 // Covenant Monitoring Suite
 // Formula-driven covenant definitions evaluated over Bloomberg-style
 // fundamental fields, reconciled against borrower-reported figures.
-// JSON-shaped columns are stored as stringified String (SQLite) and parsed
+// JSON-shaped columns are stored as stringified String (a SQLite carry-over) and
 // via typed helpers in src/lib/covenants/json.ts.
 // ─────────────────────────────────────────────────────────────────────────
 
