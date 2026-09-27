@@ -6,6 +6,9 @@ A clean-slate reference model covering everything a deal room dashboard needs:
 economics**, and the **time-series history** that dashboard analytics depend on.
 
 - **Schema:** [`schema.canonical.prisma`](./schema.canonical.prisma) — 68 models, 39 enums, validated.
+- **XSD view:** [`schema.canonical.xsd`](./schema.canonical.xsd) — the same model as XML Schema,
+  generated from the Prisma file. Often the faster read: types, enums and foreign keys are all
+  spelled out in one place. See [§8](#8-xsd-view).
 - **Target:** PostgreSQL (native enums, `Decimal` money, composite indexes, `String[]`, `Json`).
 - **Status:** design artifact. It is deliberately *separate* from the running app schema
   (`prisma/schema.prisma`) and generates to its own client output, so it cannot clobber
@@ -26,6 +29,7 @@ CANONICAL_DATABASE_URL="postgresql://u:p@localhost:5432/canonical" \
 5. [Dashboard completeness matrix](#5-dashboard-completeness-matrix)
 6. [What this changes vs. the current schema](#6-what-this-changes-vs-the-current-schema)
 7. [Adoption path](#7-adoption-path)
+8. [XSD view](#8-xsd-view)
 
 ---
 
@@ -298,3 +302,75 @@ This is a design artifact — adopting it is a real migration, not a drop-in. A 
 
 Steps 1–3 are additive and low-risk. Step 4 changes how exposure and returns are computed,
 so it wants its own migration + reconciliation against current numbers.
+
+---
+
+## 8. XSD view
+
+[`schema.canonical.xsd`](./schema.canonical.xsd) is the same model expressed as
+XML Schema. It exists because an XSD reads as one flat, annotated list — every
+type, every enumeration and every foreign key in a single file — which is easier
+to skim than a relational schema plus a set of diagrams.
+
+It is **generated, not hand-written**, so the two files cannot drift:
+
+```bash
+node docs/data-model/generate-xsd.mjs          # or: npm run docs:xsd
+```
+
+| | |
+|---|---|
+| Target namespace | `urn:lumen:private-credit-deal-room:1.0` |
+| Document element | `DealRoomDataset` — one optional collection per entity type |
+| Contents | 68 `xs:complexType` entities · 39 `xs:simpleType` enumerations · 69 `xs:key` · 121 `xs:keyref` |
+
+### How the Prisma model maps onto it
+
+| Prisma | XSD | Note |
+|---|---|---|
+| `model Foo` | `<xs:complexType name="Foo">` | Fields in declaration order, inside `xs:sequence`. |
+| `enum Bar` | `<xs:simpleType name="Bar">` | `xs:restriction` on `xs:string` with one `xs:enumeration` per value. |
+| Relation field (`deal Deal @relation(...)`) | *omitted* | A navigation, not data. The scalar FK it maps to is what appears. |
+| Scalar FK (`dealId String`) | `<xs:element name="dealId" type="pc:Cuid">` + `xs:keyref` | So validation checks referential integrity, not just shape. |
+| `Decimal @db.Decimal(20,4)` | `pc:Money` | Named simple types carry `totalDigits`/`fractionDigits`: `Money` (20,4), `Ratio` (18,6), `Percent` (9,4), `MetricValue` (24,6), `RatePercent` (9,6), `FxFactor` (18,8). |
+| `Json` | `pc:Json` | Mixed content — carry the JSON as text, or as lax-validated child elements. |
+| `String[]` | repeating element, `minOccurs="0" maxOccurs="unbounded"` | |
+| `?` | `minOccurs="0"` | |
+| `@default(x)` | `default="x"` plus a note in `xs:documentation` | Function defaults (`now()`, `cuid()`) are omitted — they are write-path concerns. |
+| `///` doc comments and trailing `//` notes | `xs:documentation` | This is most of what makes the XSD readable. |
+| `@@unique([...])` | noted in the type's `xs:documentation` | XSD 1.0 cannot express a composite uniqueness constraint scoped to a collection, so it is documented rather than enforced. |
+
+### Verifying it
+
+[`example-instance.xml`](./example-instance.xml) is a small worked example — one
+sponsor-backed unitranche deal followed from origination to a covenant test that
+trips the reconciliation flag, plus the fund position and mark it rolls up to.
+Validating it compiles the schema and exercises every `xs:keyref`, so it doubles
+as the regression test for both files:
+
+```bash
+cd docs/data-model
+xmllint --noout --schema schema.canonical.xsd example-instance.xml
+# example-instance.xml validates
+```
+
+Constraints that actually bite, verified by mutating that file:
+
+| Mutation | Result |
+|---|---|
+| Point `dealId` at a deal that isn't in the document | `No match found for key-sequence ['deal_typo'] of keyref 'fk_Facility_dealId'` |
+| Set a `CovenantTest.status` of `PROBABLY_FINE` | `not an element of the set {'PASS', 'NEAR_BREACH', 'BREACH', 'RECON_FLAG', …}` |
+| Give a `Ratio` seven decimal places | `has more fractional digits than are allowed ('6')` |
+
+### Limits worth knowing
+
+- **Order matters.** `xs:sequence` mirrors column order, so instance elements must
+  appear in the order the type declares. That is deliberate — it documents the
+  canonical shape — but it means hand-written XML needs the order right.
+- **Composite unique keys are documentation only** (see the mapping table above).
+- **Cross-document references are not checked.** `xs:keyref` is scoped to one
+  document, so a partial extract must include the rows it points at, or leave the
+  optional FK element out entirely.
+- **`Decimal` bounds are structural, not semantic.** `Percent` (9,4) is reused by a
+  few fields that hold small multiples rather than percentages (notably
+  `ReturnSnapshot.moic`); the field's own `xs:documentation` is authoritative.

@@ -1,0 +1,390 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A small, readable instance of schema.canonical.xsd: one sponsor-backed
+  unitranche deal followed from origination through to a covenant test that
+  trips the reconciliation flag, plus the fund position and mark it rolls up to.
+
+  Validate with xmllint, passing this file and the schema:
+    xmllint (noout) (schema schema.canonical.xsd) example-instance.xml
+  i.e. `xmllint` with the usual two long options, spelled out here without
+  the leading double hyphens because XML comments cannot contain them.
+
+  That also compiles the schema and checks every xs:keyref, so it is the
+  regression test for both files.
+-->
+<DealRoomDataset xmlns="urn:lumen:private-credit-deal-room:1.0">
+
+  <!-- ── Identity & access ─────────────────────────────────────────────── -->
+  <Organizations>
+    <Organization>
+      <id>org_lumen</id>
+      <name>Lumen Credit Partners</name>
+      <slug>lumen</slug>
+      <baseCurrency>USD</baseCurrency>
+      <createdAt>2024-01-02T00:00:00Z</createdAt>
+    </Organization>
+  </Organizations>
+
+  <Users>
+    <User>
+      <id>usr_mercer</id>
+      <email>jordan.mercer@lumen.example</email>
+      <name>Jordan Mercer</name>
+      <title>Managing Director, Originations</title>
+      <isActive>true</isActive>
+      <createdAt>2024-01-02T00:00:00Z</createdAt>
+    </User>
+    <User>
+      <id>usr_okafor</id>
+      <email>amara.okafor@lumen.example</email>
+      <name>Amara Okafor</name>
+      <title>Senior Credit Analyst</title>
+      <isActive>true</isActive>
+      <createdAt>2024-03-11T00:00:00Z</createdAt>
+    </User>
+    <User>
+      <id>usr_reyes</id>
+      <email>dana.reyes@lumen.example</email>
+      <name>Dana Reyes</name>
+      <title>Compliance Officer</title>
+      <isActive>true</isActive>
+      <createdAt>2024-02-05T00:00:00Z</createdAt>
+    </User>
+  </Users>
+
+  <OrgMemberships>
+    <OrgMembership>
+      <id>mem_1</id><orgId>org_lumen</orgId><userId>usr_mercer</userId>
+      <role>ADMIN</role><joinedAt>2024-01-02T00:00:00Z</joinedAt>
+    </OrgMembership>
+    <OrgMembership>
+      <id>mem_2</id><orgId>org_lumen</orgId><userId>usr_okafor</userId>
+      <role>MEMBER</role><joinedAt>2024-03-11T00:00:00Z</joinedAt>
+    </OrgMembership>
+    <OrgMembership>
+      <id>mem_3</id><orgId>org_lumen</orgId><userId>usr_reyes</userId>
+      <role>COMPLIANCE</role><joinedAt>2024-02-05T00:00:00Z</joinedAt>
+    </OrgMembership>
+  </OrgMemberships>
+
+  <!-- ── Counterparties ────────────────────────────────────────────────── -->
+  <Industries>
+    <Industry>
+      <id>ind_45102010</id>
+      <code>45102010</code>
+      <name>Application Software</name>
+    </Industry>
+  </Industries>
+
+  <Sponsors>
+    <Sponsor>
+      <id>spn_brightwater</id>
+      <orgId>org_lumen</orgId>
+      <name>Brightwater Capital</name>
+      <type>PE</type>
+      <aum>4200000000.0000</aum>
+      <currency>USD</currency>
+      <hqCity>Boston</hqCity>
+      <vintage>2011</vintage>
+    </Sponsor>
+  </Sponsors>
+
+  <Companies>
+    <Company>
+      <id>cmp_arcline</id>
+      <orgId>org_lumen</orgId>
+      <name>Arcline Systems</name>
+      <legalName>Arcline Systems Holdings, Inc.</legalName>
+      <sponsorId>spn_brightwater</sponsorId>
+      <industryId>ind_45102010</industryId>
+      <description>Workflow automation software for mid-market insurers.</description>
+      <hqCity>Denver</hqCity>
+      <country>US</country>
+      <foundedYear>2009</foundedYear>
+      <createdAt>2025-11-04T00:00:00Z</createdAt>
+    </Company>
+  </Companies>
+
+  <!-- ── The deal ──────────────────────────────────────────────────────── -->
+  <Deals>
+    <Deal>
+      <id>deal_arcline</id>
+      <orgId>org_lumen</orgId>
+      <codeName>Project Lantern</codeName>
+      <companyId>cmp_arcline</companyId>
+      <sponsorId>spn_brightwater</sponsorId>
+      <stage>CLOSED</stage>
+      <status>ACTIVE</status>
+      <channel>SPONSOR_DIRECT</channel>
+      <currency>USD</currency>
+      <targetHold>120000000.0000</targetHold>
+      <totalDealSize>185000000.0000</totalDealSize>
+      <probability>100</probability>
+      <useOfProceeds>LBO financing and a delayed-draw acquisition line.</useOfProceeds>
+      <targetCloseOn>2026-01-30T00:00:00Z</targetCloseOn>
+      <closedOn>2026-01-28T00:00:00Z</closedOn>
+      <isPrivileged>true</isPrivileged>
+      <createdAt>2025-11-04T00:00:00Z</createdAt>
+    </Deal>
+  </Deals>
+
+  <Facilities>
+    <Facility>
+      <id>fac_arcline_uni</id>
+      <dealId>deal_arcline</dealId>
+      <name>Senior Secured Unitranche</name>
+      <type>UNITRANCHE</type>
+      <seniority>FIRST_LIEN</seniority>
+      <currency>USD</currency>
+      <commitment>160000000.0000</commitment>
+      <fundedAmount>150000000.0000</fundedAmount>
+      <maturityOn>2032-01-28T00:00:00Z</maturityOn>
+      <tenorMonths>72</tenorMonths>
+      <order>0</order>
+    </Facility>
+    <Facility>
+      <id>fac_arcline_ddtl</id>
+      <dealId>deal_arcline</dealId>
+      <name>Delayed Draw Term Loan</name>
+      <type>DELAYED_DRAW</type>
+      <seniority>FIRST_LIEN</seniority>
+      <currency>USD</currency>
+      <commitment>25000000.0000</commitment>
+      <fundedAmount>0.0000</fundedAmount>
+      <maturityOn>2032-01-28T00:00:00Z</maturityOn>
+      <tenorMonths>72</tenorMonths>
+      <order>1</order>
+    </Facility>
+  </Facilities>
+
+  <!-- Two pricing rows: original terms, then a repricing. History, not an
+       overwrite — the live terms are the latest effectiveFrom. -->
+  <FacilityPricings>
+    <FacilityPricing>
+      <id>prc_1</id>
+      <facilityId>fac_arcline_uni</facilityId>
+      <effectiveFrom>2026-01-28T00:00:00Z</effectiveFrom>
+      <baseRateCode>SOFR3M</baseRateCode>
+      <spreadBps>575</spreadBps>
+      <floorBps>100</floorBps>
+      <oidPct>2.0000</oidPct>
+      <pikBps>0</pikBps>
+      <upfrontFeeBps>200</upfrontFeeBps>
+      <unusedFeeBps>50</unusedFeeBps>
+    </FacilityPricing>
+    <FacilityPricing>
+      <id>prc_2</id>
+      <facilityId>fac_arcline_uni</facilityId>
+      <effectiveFrom>2026-07-01T00:00:00Z</effectiveFrom>
+      <baseRateCode>SOFR3M</baseRateCode>
+      <spreadBps>550</spreadBps>
+      <floorBps>100</floorBps>
+      <oidPct>0.0000</oidPct>
+      <pikBps>0</pikBps>
+      <upfrontFeeBps>0</upfrontFeeBps>
+      <unusedFeeBps>50</unusedFeeBps>
+      <reason>Margin ratchet: leverage below 4.50x for two consecutive tests.</reason>
+    </FacilityPricing>
+  </FacilityPricings>
+
+  <!-- ── Governed field vocabulary the covenant formulas resolve against ── -->
+  <FieldDefinitions>
+    <FieldDefinition>
+      <id>fld_ebitda_adj</id><code>EBITDA_ADJ</code>
+      <label>Covenant Adjusted EBITDA</label><unit>currency</unit>
+      <aggregation>FLOW</aggregation>
+      <deriveFormula>EBITDA + PERMITTED_ADDBACKS</deriveFormula>
+    </FieldDefinition>
+    <FieldDefinition>
+      <id>fld_tot_debt</id><code>TOT_DEBT</code>
+      <label>Total Debt</label><unit>currency</unit>
+      <aggregation>STOCK</aggregation>
+      <bloombergMnemonic>SHORT_AND_LONG_TERM_DEBT</bloombergMnemonic>
+    </FieldDefinition>
+    <FieldDefinition>
+      <id>fld_cash</id><code>CASH</code>
+      <label>Cash &amp; Equivalents</label><unit>currency</unit>
+      <aggregation>STOCK</aggregation>
+      <bloombergMnemonic>CASH_AND_MARKETABLE_SECURITIES</bloombergMnemonic>
+    </FieldDefinition>
+  </FieldDefinitions>
+
+  <FinancialPeriods>
+    <FinancialPeriod>
+      <id>per_q2_2026</id>
+      <companyId>cmp_arcline</companyId>
+      <periodEnd>2026-06-30T00:00:00Z</periodEnd>
+      <periodType>LTM</periodType>
+      <label>LTM Q2 2026</label>
+      <currency>USD</currency>
+      <isActual>true</isActual>
+      <source>COMPLIANCE_CERT</source>
+    </FinancialPeriod>
+  </FinancialPeriods>
+
+  <!-- Bloomberg-sourced facts, plus one analyst override. The unique key is
+       (company, periodEnd, fieldCode, source), so lanes coexist. -->
+  <FundamentalFacts>
+    <FundamentalFact>
+      <id>fct_1</id><companyId>cmp_arcline</companyId><periodId>per_q2_2026</periodId>
+      <periodEnd>2026-06-30T00:00:00Z</periodEnd><periodType>LTM</periodType>
+      <fieldCode>EBITDA_ADJ</fieldCode><value>47600000.0000</value>
+      <source>BLOOMBERG</source><isOverride>false</isOverride>
+      <recordedAt>2026-08-12T09:15:00Z</recordedAt>
+    </FundamentalFact>
+    <FundamentalFact>
+      <id>fct_2</id><companyId>cmp_arcline</companyId><periodId>per_q2_2026</periodId>
+      <periodEnd>2026-06-30T00:00:00Z</periodEnd><periodType>LTM</periodType>
+      <fieldCode>EBITDA_ADJ</fieldCode><value>44900000.0000</value>
+      <source>OVERRIDE</source><isOverride>true</isOverride>
+      <overriddenById>usr_okafor</overriddenById>
+      <note>Disallowed 2.7mm of unrealized cost synergies above the 25% add-back cap.</note>
+      <recordedAt>2026-08-13T14:02:00Z</recordedAt>
+    </FundamentalFact>
+    <FundamentalFact>
+      <id>fct_3</id><companyId>cmp_arcline</companyId><periodId>per_q2_2026</periodId>
+      <periodEnd>2026-06-30T00:00:00Z</periodEnd><periodType>LTM</periodType>
+      <fieldCode>TOT_DEBT</fieldCode><value>232000000.0000</value>
+      <source>COMPLIANCE_CERT</source><isOverride>false</isOverride>
+      <recordedAt>2026-08-12T09:15:00Z</recordedAt>
+    </FundamentalFact>
+    <FundamentalFact>
+      <id>fct_4</id><companyId>cmp_arcline</companyId><periodId>per_q2_2026</periodId>
+      <periodEnd>2026-06-30T00:00:00Z</periodEnd><periodType>LTM</periodType>
+      <fieldCode>CASH</fieldCode><value>18500000.0000</value>
+      <source>COMPLIANCE_CERT</source><isOverride>false</isOverride>
+      <recordedAt>2026-08-12T09:15:00Z</recordedAt>
+    </FundamentalFact>
+  </FundamentalFacts>
+
+  <!-- ── Covenant: definition, step-down schedule, one test ────────────── -->
+  <CovenantDefinitions>
+    <CovenantDefinition>
+      <id>cov_arcline_lev</id>
+      <dealId>deal_arcline</dealId>
+      <name>Total Net Leverage</name>
+      <category>MAINTENANCE</category>
+      <formula>(TOT_DEBT - CASH) / EBITDA_ADJ</formula>
+      <formulaAst>{"op":"/","left":{"op":"-","left":"TOT_DEBT","right":"CASH"},"right":"EBITDA_ADJ"}</formulaAst>
+      <fieldRefs>TOT_DEBT</fieldRefs>
+      <fieldRefs>CASH</fieldRefs>
+      <fieldRefs>EBITDA_ADJ</fieldRefs>
+      <ebitdaBasis>EBITDA_ADJ</ebitdaBasis>
+      <operator>LTE</operator>
+      <unit>x</unit>
+      <threshold>5.500000</threshold>
+      <frequency>Quarterly</frequency>
+      <addbackCapPct>25.0000</addbackCapPct>
+      <sourceRef>Credit Agreement §7.11(a)</sourceRef>
+      <isActive>true</isActive>
+      <createdAt>2026-01-28T00:00:00Z</createdAt>
+    </CovenantDefinition>
+  </CovenantDefinitions>
+
+  <CovenantThresholdSteps>
+    <CovenantThresholdStep>
+      <id>stp_1</id><definitionId>cov_arcline_lev</definitionId>
+      <effectiveFrom>2026-01-28T00:00:00Z</effectiveFrom><value>5.500000</value>
+    </CovenantThresholdStep>
+    <CovenantThresholdStep>
+      <id>stp_2</id><definitionId>cov_arcline_lev</definitionId>
+      <effectiveFrom>2027-01-01T00:00:00Z</effectiveFrom><value>5.000000</value>
+    </CovenantThresholdStep>
+    <CovenantThresholdStep>
+      <id>stp_3</id><definitionId>cov_arcline_lev</definitionId>
+      <effectiveFrom>2028-01-01T00:00:00Z</effectiveFrom><value>4.500000</value>
+    </CovenantThresholdStep>
+  </CovenantThresholdSteps>
+
+  <!-- Recomputed 4.755x on the override basis vs 4.485x as certified: a
+       0.27x gap, so the test lands on RECON_FLAG rather than a silent PASS. -->
+  <CovenantTests>
+    <CovenantTest>
+      <id>tst_q2_2026</id>
+      <definitionId>cov_arcline_lev</definitionId>
+      <periodEnd>2026-06-30T00:00:00Z</periodEnd>
+      <testDate>2026-08-14T00:00:00Z</testDate>
+      <recomputedValue>4.755011</recomputedValue>
+      <reportedValue>4.485294</reportedValue>
+      <reconDelta>0.269717</reconDelta>
+      <thresholdApplied>5.500000</thresholdApplied>
+      <headroomPct>13.5453</headroomPct>
+      <status>RECON_FLAG</status>
+      <formulaSnapshot>{"TOT_DEBT":232000000,"CASH":18500000,"EBITDA_ADJ":44900000,"basis":"OVERRIDE"}</formulaSnapshot>
+      <note>Delta is the capped add-back haircut; certificate used the sponsor's uncapped figure.</note>
+    </CovenantTest>
+  </CovenantTests>
+
+  <!-- ── Fund economics ────────────────────────────────────────────────── -->
+  <Funds>
+    <Fund>
+      <id>fnd_lcp_iii</id>
+      <orgId>org_lumen</orgId>
+      <name>Lumen Direct Lending Fund III</name>
+      <type>MAIN_FUND</type>
+      <vintage>2024</vintage>
+      <currency>USD</currency>
+      <committedCapital>2400000000.0000</committedCapital>
+      <inceptionOn>2024-04-01T00:00:00Z</inceptionOn>
+    </Fund>
+  </Funds>
+
+  <Positions>
+    <Position>
+      <id>pos_1</id>
+      <fundId>fnd_lcp_iii</fundId>
+      <facilityId>fac_arcline_uni</facilityId>
+      <currency>USD</currency>
+      <parAmount>120000000.0000</parAmount>
+      <fundedAmount>112500000.0000</fundedAmount>
+      <costBasis>110250000.0000</costBasis>
+      <openedOn>2026-01-28T00:00:00Z</openedOn>
+    </Position>
+  </Positions>
+
+  <Valuations>
+    <Valuation>
+      <id>val_q2_2026</id>
+      <positionId>pos_1</positionId>
+      <asOf>2026-06-30T00:00:00Z</asOf>
+      <method>YIELD</method>
+      <pricePctOfPar>98.7500</pricePctOfPar>
+      <fairValue>111093750.0000</fairValue>
+      <discountRate>11.2500</discountRate>
+      <status>FINAL</status>
+      <preparedById>usr_okafor</preparedById>
+      <approvedById>usr_mercer</approvedById>
+      <approvedAt>2026-07-18T00:00:00Z</approvedAt>
+    </Valuation>
+  </Valuations>
+
+  <ReturnSnapshots>
+    <ReturnSnapshot>
+      <id>ret_1</id>
+      <positionId>pos_1</positionId>
+      <asOf>2026-06-30T00:00:00Z</asOf>
+      <grossIrrPct>11.8400</grossIrrPct>
+      <netIrrPct>9.9100</netIrrPct>
+      <moic>1.0410</moic>
+      <realized>4820000.0000</realized>
+      <unrealized>111093750.0000</unrealized>
+    </ReturnSnapshot>
+  </ReturnSnapshots>
+
+  <Alerts>
+    <Alert>
+      <id>alr_1</id>
+      <orgId>org_lumen</orgId>
+      <dealId>deal_arcline</dealId>
+      <kind>recon_flag</kind>
+      <severity>WARNING</severity>
+      <state>OPEN</state>
+      <title>Arcline Systems — certified leverage understates recomputed by 0.27x</title>
+      <body>Q2 2026 compliance certificate applied add-backs above the 25% cap.</body>
+      <dedupeKey>recon:cov_arcline_lev:2026-06-30</dedupeKey>
+      <assigneeId>usr_okafor</assigneeId>
+      <raisedAt>2026-08-14T06:30:00Z</raisedAt>
+    </Alert>
+  </Alerts>
+
+</DealRoomDataset>
