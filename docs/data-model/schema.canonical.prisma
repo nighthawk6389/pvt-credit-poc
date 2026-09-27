@@ -1,0 +1,1586 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// CANONICAL DATA MODEL — Private Credit Deal Room & Dashboard
+// ═══════════════════════════════════════════════════════════════════════════
+// A clean-slate, reference model for everything a deal room dashboard needs:
+// identity & access, counterparties, pipeline, data room, structuring &
+// syndication, covenant monitoring, fund/position economics, and the
+// time-series history that dashboard analytics depend on.
+//
+// Target: PostgreSQL (native enums, Decimal money, partial/composite indexes).
+// This is a DESIGN ARTIFACT — it is intentionally separate from the running
+// app schema at prisma/schema.prisma and generates to its own client output
+// so it can never clobber the live client. See README.md in this directory.
+//
+// Modeling rules applied throughout:
+//   1. Money is Decimal(20,4) — never Float. Ratios are Decimal(18,6).
+//   2. Anything a dashboard trends over time is an EVENT TABLE, not a mutable
+//      scalar (stage, rating, pricing, marks, document versions).
+//   3. Every actor is a User FK — no free-text name strings.
+//   4. Multi-tenant: root aggregates carry orgId.
+//   5. Amounts always travel with a currency; FX is a first-class table.
+// ═══════════════════════════════════════════════════════════════════════════
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../../node_modules/.prisma/canonical-client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("CANONICAL_DATABASE_URL")
+}
+
+// ─────────────────────────── ENUMS ────────────────────────────────────────
+
+enum OrgRole {
+  OWNER
+  ADMIN
+  MEMBER
+  COMPLIANCE
+  READ_ONLY
+}
+
+enum DealRole {
+  DEAL_LEAD
+  ANALYST
+  IC_MEMBER
+  COMPLIANCE
+  OBSERVER
+}
+
+enum DealStage {
+  SOURCING
+  SCREENING
+  DILIGENCE
+  IC
+  DOCUMENTATION
+  CLOSED
+  PASSED
+  WITHDRAWN
+}
+
+enum DealStatus {
+  ACTIVE
+  ON_HOLD
+  CLOSED
+  PASSED
+}
+
+enum OriginationChannel {
+  SPONSOR_DIRECT
+  BANK_INTERMEDIATED
+  ADVISOR
+  INCUMBENT_LENDER
+  PROPRIETARY
+  CLUB
+}
+
+enum EntityRole {
+  BORROWER
+  CO_BORROWER
+  GUARANTOR
+  PLEDGOR
+  HOLDCO
+}
+
+enum FacilityType {
+  UNITRANCHE
+  FIRST_LIEN_TL
+  SECOND_LIEN
+  REVOLVER
+  DELAYED_DRAW
+  ABL
+  MEZZANINE
+  HOLDCO_PIK
+}
+
+enum Seniority {
+  FIRST_LIEN
+  SECOND_LIEN
+  UNSECURED
+  SUBORDINATED
+}
+
+enum LienType {
+  FIRST
+  SECOND
+  UNSECURED
+}
+
+enum AgentRole {
+  ADMIN_AGENT
+  COLLATERAL_AGENT
+  LEAD_ARRANGER
+  PARTICIPANT
+}
+
+enum CovenantCategory {
+  MAINTENANCE
+  SPRINGING
+  INCURRENCE
+  REPORTING
+}
+
+enum CovenantOperator {
+  LTE
+  GTE
+}
+
+enum CovenantStatus {
+  PASS
+  NEAR_BREACH
+  BREACH
+  RECON_FLAG
+  WAIVED
+  UPCOMING
+  LATE
+  MISSING
+  NOT_APPLICABLE
+}
+
+enum PeriodType {
+  QUARTER
+  ANNUAL
+  LTM
+  YTD
+  STUB
+}
+
+enum FactSource {
+  BLOOMBERG
+  COMPLIANCE_CERT
+  OVERRIDE
+  COMPUTED
+  MANUAL
+  AUDITED
+}
+
+enum AddbackCategory {
+  SYNERGIES
+  NON_RECURRING
+  PRO_FORMA_MA
+  STOCK_COMP
+  RUN_RATE
+  OTHER
+}
+
+enum FieldAggregation {
+  FLOW
+  STOCK
+  DERIVED
+}
+
+enum ValuationMethod {
+  YIELD
+  DCF
+  MARKET_COMP
+  RECOVERY
+  BROKER_QUOTE
+}
+
+enum ValuationStatus {
+  DRAFT
+  COMMITTEE
+  FINAL
+}
+
+enum DocumentKind {
+  CIM
+  FINANCIALS
+  LEGAL
+  DD_REPORT
+  MODEL
+  MEMO
+  COMPLIANCE_CERT
+  PRESENTATION
+  OTHER
+}
+
+enum DocumentPrivilege {
+  DEAL_TEAM
+  IC
+  COMPLIANCE
+  ALL
+}
+
+enum DocEventType {
+  VIEW
+  DOWNLOAD
+  PRINT
+  UPLOAD
+  DELETE
+  SHARE
+}
+
+enum DiligenceStatus {
+  OPEN
+  IN_REVIEW
+  CLEARED
+  FLAGGED
+}
+
+enum QAStatus {
+  OPEN
+  ANSWERED
+  CLOSED
+}
+
+enum MemoStatus {
+  DRAFT
+  IN_REVIEW
+  APPROVED
+  REJECTED
+}
+
+enum ICVoteChoice {
+  APPROVE
+  REJECT
+  ABSTAIN
+  CONDITIONAL
+}
+
+enum TaskStatus {
+  TODO
+  DOING
+  DONE
+  BLOCKED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum AmendmentType {
+  AMENDMENT
+  WAIVER
+  CONSENT
+  FORBEARANCE
+  RESTRUCTURING
+  REPRICING
+}
+
+enum AmendmentStatus {
+  PROPOSED
+  CIRCULATED
+  APPROVED
+  REJECTED
+  EXECUTED
+}
+
+enum ConsentChoice {
+  APPROVE
+  REJECT
+  ABSTAIN
+}
+
+enum FundType {
+  MAIN_FUND
+  SMA
+  SPV
+  CLO
+  BDC
+}
+
+enum TransactionType {
+  FUNDING
+  DRAWDOWN
+  PAYDOWN
+  PREPAYMENT
+  INTEREST
+  PIK_ACCRUAL
+  FEE
+  SALE
+  PURCHASE
+  WRITE_OFF
+  RECOVERY
+}
+
+enum DeliveryStatus {
+  PENDING
+  DELIVERED
+  LATE
+  MISSING
+  WAIVED
+}
+
+enum RiskTrend {
+  IMPROVING
+  STABLE
+  DETERIORATING
+}
+
+enum AlertSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+enum AlertState {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+  SUPPRESSED
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  VIEW
+  APPROVE
+  WAIVE
+  OVERRIDE
+  WALL_CROSS
+  EXPORT
+}
+
+enum Currency {
+  USD
+  EUR
+  GBP
+  CAD
+  AUD
+  CHF
+  SEK
+}
+
+// ═══════════════════════ 1. IDENTITY, ACCESS & AUDIT ═══════════════════════
+// Replaces free-text actor strings with real users, and makes the information
+// barrier (wall-cross) an auditable event stream rather than a boolean.
+
+model Organization {
+  id           String   @id @default(cuid())
+  name         String
+  slug         String   @unique
+  baseCurrency Currency @default(USD)
+  createdAt    DateTime @default(now())
+
+  memberships  OrgMembership[]
+  teams        Team[]
+  sponsors     Sponsor[]
+  companies    Company[]
+  deals        Deal[]
+  funds        Fund[]
+  lenders      Lender[]
+  savedViews   SavedView[]
+  alerts       Alert[]
+  auditEvents  AuditEvent[]
+  kpiSnapshots KpiSnapshot[]
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  title     String?
+  avatarUrl String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  memberships        OrgMembership[]
+  teamMemberships    TeamMembership[]
+  dealRoles          DealTeamMember[]
+  uploadedDocuments  DocumentVersion[]     @relation("DocVersionAuthor")
+  documentEvents     DocumentEvent[]
+  grantsReceived     DocumentAccessGrant[] @relation("GrantGrantee")
+  grantsIssued       DocumentAccessGrant[] @relation("GrantIssuer")
+  tasksAssigned      Task[]                @relation("TaskAssignee")
+  tasksCreated       Task[]                @relation("TaskCreator")
+  notes              Note[]
+  comments           Comment[]
+  icVotes            ICVote[]
+  memoVersions       MemoVersion[]
+  diligenceItems     DiligenceItem[]       @relation("DiligenceAssignee")
+  qaMessages         QAMessage[]
+  stageTransitions   StageTransition[]
+  ratingChanges      RatingHistory[]
+  watchlistEvents    WatchlistEvent[]
+  valuationsPrepared Valuation[]           @relation("ValuationPreparer")
+  valuationsApproved Valuation[]           @relation("ValuationApprover")
+  factOverrides      FundamentalFact[]     @relation("FactOverrider")
+  addbacks           EbitdaAdjustment[]
+  covenantWaivers    CovenantTest[]        @relation("CovenantWaiver")
+  consentVotes       AmendmentConsent[]
+  deliveriesLogged   ReportingDelivery[]
+  wallCrossSubject   WallCrossEvent[]      @relation("WallCrossSubject")
+  wallCrossApprover  WallCrossEvent[]      @relation("WallCrossApprover")
+  alertsAssigned     Alert[]               @relation("AlertAssignee")
+  savedViews         SavedView[]
+  auditEvents        AuditEvent[]
+  activityEvents     ActivityEvent[]
+}
+
+model OrgMembership {
+  id       String       @id @default(cuid())
+  orgId    String
+  org      Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role     OrgRole      @default(MEMBER)
+  joinedAt DateTime     @default(now())
+
+  @@unique([orgId, userId])
+  @@index([userId])
+}
+
+model Team {
+  id      String                @id @default(cuid())
+  orgId   String
+  org     Organization          @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name    String
+  members TeamMembership[]
+  grants  DocumentAccessGrant[]
+
+  @@unique([orgId, name])
+}
+
+model TeamMembership {
+  id     String @id @default(cuid())
+  teamId String
+  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@index([userId])
+}
+
+/// A user's seat on a specific deal. Wall-cross state lives in WallCrossEvent;
+/// this row carries the current denormalized flag for fast filtering.
+model DealTeamMember {
+  id            String    @id @default(cuid())
+  dealId        String
+  deal          Deal      @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role          DealRole
+  isWallCrossed Boolean   @default(false)
+  addedAt       DateTime  @default(now())
+  removedAt     DateTime?
+
+  @@unique([dealId, userId])
+  @@index([userId])
+  @@index([dealId, role])
+}
+
+/// Immutable compliance record of crossing/de-crossing the information barrier.
+model WallCrossEvent {
+  id         String   @id @default(cuid())
+  dealId     String
+  deal       Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  subjectId  String
+  subject    User     @relation("WallCrossSubject", fields: [subjectId], references: [id])
+  approverId String?
+  approver   User?    @relation("WallCrossApprover", fields: [approverId], references: [id])
+  crossed    Boolean // true = crossed in, false = brought back over the wall
+  reason     String?
+  occurredAt DateTime @default(now())
+
+  @@index([dealId, occurredAt])
+  @@index([subjectId])
+}
+
+/// Append-only audit trail. Never updated or deleted.
+model AuditEvent {
+  id         String       @id @default(cuid())
+  orgId      String
+  org        Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  actorId    String?
+  actor      User?        @relation(fields: [actorId], references: [id])
+  action     AuditAction
+  entityType String
+  entityId   String
+  summary    String
+  before     Json?
+  after      Json?
+  ipAddress  String?
+  occurredAt DateTime     @default(now())
+
+  @@index([orgId, occurredAt])
+  @@index([entityType, entityId])
+  @@index([actorId, occurredAt])
+}
+
+/// Human-readable feed powering the dashboard "Recent activity" widget.
+model ActivityEvent {
+  id         String   @id @default(cuid())
+  dealId     String?
+  deal       Deal?    @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  actorId    String?
+  actor      User?    @relation(fields: [actorId], references: [id])
+  verb       String
+  target     String?
+  occurredAt DateTime @default(now())
+
+  @@index([dealId, occurredAt])
+  @@index([occurredAt])
+}
+
+// ═══════════════════ 2. COUNTERPARTIES & OBLIGOR STRUCTURE ═════════════════
+
+model Industry {
+  id        String     @id @default(cuid())
+  code      String     @unique // e.g. GICS / NAICS code
+  name      String
+  parentId  String?
+  parent    Industry?  @relation("IndustryTree", fields: [parentId], references: [id])
+  children  Industry[] @relation("IndustryTree")
+  companies Company[]
+}
+
+model Sponsor {
+  id        String       @id @default(cuid())
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name      String
+  type      String // PE | Family Office | Independent
+  aum       Decimal?     @db.Decimal(20, 4)
+  currency  Currency     @default(USD)
+  hqCity    String?
+  vintage   Int?
+  companies Company[]
+  deals     Deal[]
+  contacts  Contact[]
+
+  @@unique([orgId, name])
+}
+
+/// The operating business. Distinct from the legal entities that actually
+/// borrow or guarantee (see LegalEntity).
+model Company {
+  id          String       @id @default(cuid())
+  orgId       String
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name        String
+  legalName   String?
+  sponsorId   String?
+  sponsor     Sponsor?     @relation(fields: [sponsorId], references: [id])
+  industryId  String?
+  industry    Industry?    @relation(fields: [industryId], references: [id])
+  description String?
+  hqCity      String?
+  country     String?
+  website     String?
+  foundedYear Int?
+  createdAt   DateTime     @default(now())
+
+  legalEntities    LegalEntity[]
+  deals            Deal[]
+  financialPeriods FinancialPeriod[]
+  fundamentals     FundamentalFact[]
+  addbacks         EbitdaAdjustment[]
+  ratings          RatingHistory[]
+  watchlistEvents  WatchlistEvent[]
+  contacts         Contact[]
+
+  @@unique([orgId, name])
+  @@index([industryId])
+  @@index([sponsorId])
+}
+
+/// Borrowers, co-borrowers, guarantors and pledgors in the credit group.
+model LegalEntity {
+  id           String        @id @default(cuid())
+  companyId    String
+  company      Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name         String
+  jurisdiction String?
+  role         EntityRole
+  parentId     String?
+  parent       LegalEntity?  @relation("EntityTree", fields: [parentId], references: [id])
+  children     LegalEntity[] @relation("EntityTree")
+
+  facilityRoles FacilityObligor[]
+  collateral    Collateral[]
+
+  @@index([companyId, role])
+}
+
+model Advisor {
+  id       String        @id @default(cuid())
+  name     String
+  kind     String // Law firm | QoE | Consultant | Bank
+  contacts Contact[]
+  deals    DealAdvisor[]
+}
+
+model Contact {
+  id        String   @id @default(cuid())
+  name      String
+  email     String?
+  phone     String?
+  title     String?
+  sponsorId String?
+  sponsor   Sponsor? @relation(fields: [sponsorId], references: [id], onDelete: Cascade)
+  companyId String?
+  company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  advisorId String?
+  advisor   Advisor? @relation(fields: [advisorId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([sponsorId])
+}
+
+// ═══════════════════════ 3. DEAL & PIPELINE ════════════════════════════════
+
+model Deal {
+  id        String       @id @default(cuid())
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  codeName  String // project name used pre-announcement
+  companyId String
+  company   Company      @relation(fields: [companyId], references: [id])
+  sponsorId String?
+  sponsor   Sponsor?     @relation(fields: [sponsorId], references: [id])
+
+  stage         DealStage           @default(SOURCING) // current; history in StageTransition
+  status        DealStatus          @default(ACTIVE)
+  channel       OriginationChannel?
+  currency      Currency            @default(USD)
+  targetHold    Decimal?            @db.Decimal(20, 4) // amount we intend to hold
+  totalDealSize Decimal?            @db.Decimal(20, 4) // whole financing across lenders
+  probability   Int?                @default(50)
+  useOfProceeds String?
+  thesis        String?
+  targetCloseOn DateTime?
+  closedOn      DateTime?
+  /// Information-barrier flag: privileged deals are hidden from non-crossed users.
+  isPrivileged  Boolean             @default(true)
+  createdAt     DateTime            @default(now())
+
+  team            DealTeamMember[]
+  wallCrossEvents WallCrossEvent[]
+  activity        ActivityEvent[]
+  transitions     StageTransition[]
+  milestones      Milestone[]
+  advisors        DealAdvisor[]
+  folders         Folder[]
+  documents       Document[]
+  diligenceItems  DiligenceItem[]
+  qaThreads       QAThread[]
+  memo            CreditMemo?
+  agendaItems     ICAgendaItem[]
+  votes           ICVote[]
+  tasks           Task[]
+  notes           Note[]
+  comments        Comment[]
+  facilities      Facility[]
+  covenants       CovenantDefinition[]
+  obligations     ReportingObligation[]
+  amendments      Amendment[]
+  alerts          Alert[]
+
+  @@unique([orgId, codeName])
+  @@index([orgId, stage])
+  @@index([companyId])
+  @@index([sponsorId])
+}
+
+/// Every stage change, so the dashboard can compute cycle time, conversion
+/// rates and pipeline velocity. Without this, stage is an unauditable scalar.
+model StageTransition {
+  id          String     @id @default(cuid())
+  dealId      String
+  deal        Deal       @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  fromStage   DealStage?
+  toStage     DealStage
+  changedById String?
+  changedBy   User?      @relation(fields: [changedById], references: [id])
+  note        String?
+  occurredAt  DateTime   @default(now())
+  /// Days spent in fromStage — denormalized at write time for cheap analytics.
+  daysInPrior Int?
+
+  @@index([dealId, occurredAt])
+  @@index([toStage, occurredAt])
+}
+
+model Milestone {
+  id          String    @id @default(cuid())
+  dealId      String
+  deal        Deal      @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  name        String
+  dueOn       DateTime?
+  completedAt DateTime?
+
+  @@index([dealId, dueOn])
+}
+
+model DealAdvisor {
+  id        String  @id @default(cuid())
+  dealId    String
+  deal      Deal    @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  advisorId String
+  advisor   Advisor @relation(fields: [advisorId], references: [id], onDelete: Cascade)
+  mandate   String?
+
+  @@unique([dealId, advisorId])
+}
+
+// ─────────────────── Investment Committee & credit memo ───────────────────
+
+model ICMeeting {
+  id      String         @id @default(cuid())
+  title   String
+  heldAt  DateTime
+  minutes String?
+  agenda  ICAgendaItem[]
+  votes   ICVote[]
+
+  @@index([heldAt])
+}
+
+model ICAgendaItem {
+  id        String    @id @default(cuid())
+  meetingId String
+  meeting   ICMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  dealId    String
+  deal      Deal      @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  outcome   String?
+
+  @@unique([meetingId, dealId])
+}
+
+model ICVote {
+  id        String       @id @default(cuid())
+  dealId    String
+  deal      Deal         @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  meetingId String?
+  meeting   ICMeeting?   @relation(fields: [meetingId], references: [id])
+  voterId   String
+  voter     User         @relation(fields: [voterId], references: [id])
+  choice    ICVoteChoice
+  condition String? // for CONDITIONAL approvals
+  comment   String?
+  votedAt   DateTime     @default(now())
+
+  @@unique([dealId, voterId])
+  @@index([meetingId])
+}
+
+model CreditMemo {
+  id               String        @id @default(cuid())
+  dealId           String        @unique
+  deal             Deal          @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  status           MemoStatus    @default(DRAFT)
+  recommendation   String?
+  proposedRating   String?
+  currentVersionId String?       @unique
+  currentVersion   MemoVersion?  @relation("MemoCurrent", fields: [currentVersionId], references: [id])
+  versions         MemoVersion[] @relation("MemoVersions")
+  updatedAt        DateTime      @updatedAt
+}
+
+model MemoVersion {
+  id         String        @id @default(cuid())
+  memoId     String
+  memo       CreditMemo    @relation("MemoVersions", fields: [memoId], references: [id], onDelete: Cascade)
+  versionNo  Int
+  authorId   String?
+  author     User?         @relation(fields: [authorId], references: [id])
+  changeNote String?
+  createdAt  DateTime      @default(now())
+  sections   MemoSection[]
+  currentOf  CreditMemo?   @relation("MemoCurrent")
+
+  @@unique([memoId, versionNo])
+}
+
+model MemoSection {
+  id        String      @id @default(cuid())
+  versionId String
+  version   MemoVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  key       String
+  title     String
+  body      String
+  order     Int         @default(0)
+
+  @@unique([versionId, key])
+}
+
+// ─────────────────────── Collaboration primitives ─────────────────────────
+
+model Task {
+  id          String     @id @default(cuid())
+  dealId      String
+  deal        Deal       @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  title       String
+  status      TaskStatus @default(TODO)
+  priority    Priority   @default(MEDIUM)
+  assigneeId  String?
+  assignee    User?      @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  createdById String?
+  createdBy   User?      @relation("TaskCreator", fields: [createdById], references: [id])
+  dueOn       DateTime?
+  completedAt DateTime?
+
+  @@index([dealId, status])
+  @@index([assigneeId, status])
+}
+
+model Note {
+  id         String   @id @default(cuid())
+  dealId     String
+  deal       Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  kind       String // MgmtCall | SiteVisit | Internal
+  title      String?
+  body       String
+  authorId   String?
+  author     User?    @relation(fields: [authorId], references: [id])
+  occurredAt DateTime @default(now())
+
+  @@index([dealId, occurredAt])
+}
+
+model Comment {
+  id         String    @id @default(cuid())
+  dealId     String
+  deal       Deal      @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  /// Optional anchor so a comment can hang off any record in the deal.
+  entityType String?
+  entityId   String?
+  parentId   String?
+  parent     Comment?  @relation("CommentThread", fields: [parentId], references: [id])
+  replies    Comment[] @relation("CommentThread")
+  authorId   String?
+  author     User?     @relation(fields: [authorId], references: [id])
+  body       String
+  createdAt  DateTime  @default(now())
+  resolvedAt DateTime?
+
+  @@index([dealId, createdAt])
+  @@index([entityType, entityId])
+}
+
+// ═══════════════════════ 4. DATA ROOM & DILIGENCE ══════════════════════════
+
+model Folder {
+  id        String                @id @default(cuid())
+  dealId    String
+  deal      Deal                  @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  name      String
+  parentId  String?
+  parent    Folder?               @relation("FolderTree", fields: [parentId], references: [id])
+  children  Folder[]              @relation("FolderTree")
+  order     Int                   @default(0)
+  documents Document[]
+  grants    DocumentAccessGrant[]
+
+  @@index([dealId, parentId])
+}
+
+model Document {
+  id        String            @id @default(cuid())
+  dealId    String
+  deal      Deal              @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  folderId  String?
+  folder    Folder?           @relation(fields: [folderId], references: [id])
+  name      String
+  kind      DocumentKind
+  privilege DocumentPrivilege @default(DEAL_TEAM)
+  isDeleted Boolean           @default(false)
+  createdAt DateTime          @default(now())
+
+  currentVersionId String?               @unique
+  currentVersion   DocumentVersion?      @relation("DocCurrent", fields: [currentVersionId], references: [id])
+  versions         DocumentVersion[]     @relation("DocVersions")
+  grants           DocumentAccessGrant[]
+  events           DocumentEvent[]
+  diligenceItems   DiligenceItem[]
+
+  @@index([dealId, kind])
+  @@index([folderId])
+}
+
+/// Real version rows — supersedes an integer `version` column, so the
+/// dashboard can show "3 new versions this week" and diff history.
+model DocumentVersion {
+  id            String          @id @default(cuid())
+  documentId    String
+  document      Document        @relation("DocVersions", fields: [documentId], references: [id], onDelete: Cascade)
+  versionNo     Int
+  authorId      String?
+  author        User?           @relation("DocVersionAuthor", fields: [authorId], references: [id])
+  fileType      String
+  sizeBytes     BigInt          @default(0)
+  checksum      String?
+  storageKey    String? // object-store pointer
+  extractedText String? // OCR/parse output for search & AI grounding
+  uploadedAt    DateTime        @default(now())
+  currentOf     Document?       @relation("DocCurrent")
+  events        DocumentEvent[]
+
+  @@unique([documentId, versionNo])
+  @@index([uploadedAt])
+}
+
+/// Explicit grant of access to a document or an entire folder, to a user or
+/// a team. Absence of a grant = no access (deny by default).
+model DocumentAccessGrant {
+  id          String    @id @default(cuid())
+  documentId  String?
+  document    Document? @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  folderId    String?
+  folder      Folder?   @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  granteeId   String?
+  grantee     User?     @relation("GrantGrantee", fields: [granteeId], references: [id], onDelete: Cascade)
+  teamId      String?
+  team        Team?     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  canView     Boolean   @default(true)
+  canDownload Boolean   @default(false)
+  issuedById  String?
+  issuedBy    User?     @relation("GrantIssuer", fields: [issuedById], references: [id])
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([documentId])
+  @@index([folderId])
+  @@index([granteeId])
+}
+
+/// Who opened/downloaded what, when — the audit trail regulators and LPs ask for.
+model DocumentEvent {
+  id         String           @id @default(cuid())
+  documentId String
+  document   Document         @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  versionId  String?
+  version    DocumentVersion? @relation(fields: [versionId], references: [id])
+  userId     String?
+  user       User?            @relation(fields: [userId], references: [id])
+  type       DocEventType
+  ipAddress  String?
+  occurredAt DateTime         @default(now())
+
+  @@index([documentId, occurredAt])
+  @@index([userId, occurredAt])
+}
+
+/// Due-diligence checklist item (DDQ).
+model DiligenceItem {
+  id         String          @id @default(cuid())
+  dealId     String
+  deal       Deal            @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  category   String
+  question   String
+  status     DiligenceStatus @default(OPEN)
+  answer     String?
+  assigneeId String?
+  assignee   User?           @relation("DiligenceAssignee", fields: [assigneeId], references: [id])
+  evidenceId String?
+  evidence   Document?       @relation(fields: [evidenceId], references: [id])
+  dueOn      DateTime?
+  order      Int             @default(0)
+
+  @@index([dealId, status])
+  @@index([assigneeId])
+}
+
+/// Threaded Q&A with the sponsor/company during diligence.
+model QAThread {
+  id        String      @id @default(cuid())
+  dealId    String
+  deal      Deal        @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  subject   String
+  status    QAStatus    @default(OPEN)
+  createdAt DateTime    @default(now())
+  messages  QAMessage[]
+
+  @@index([dealId, status])
+}
+
+model QAMessage {
+  id         String   @id @default(cuid())
+  threadId   String
+  thread     QAThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  authorId   String?
+  author     User?    @relation(fields: [authorId], references: [id])
+  /// True when posted by the counterparty rather than an internal user.
+  isExternal Boolean  @default(false)
+  body       String
+  createdAt  DateTime @default(now())
+
+  @@index([threadId, createdAt])
+}
+
+// ═════════════ 5. FACILITIES, SYNDICATION, COLLATERAL, AMENDMENTS ══════════
+
+model Facility {
+  id           String       @id @default(cuid())
+  dealId       String
+  deal         Deal         @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  name         String
+  type         FacilityType
+  seniority    Seniority
+  currency     Currency     @default(USD)
+  commitment   Decimal      @db.Decimal(20, 4)
+  fundedAmount Decimal      @default(0) @db.Decimal(20, 4)
+  maturityOn   DateTime?
+  tenorMonths  Int?
+  order        Int          @default(0)
+
+  pricings       FacilityPricing[]
+  obligors       FacilityObligor[]
+  participations FacilityParticipation[]
+  collateral     Collateral[]
+  positions      Position[]
+  allocations    Allocation[]
+  cashflows      FacilityCashflow[]
+  amendments     Amendment[]
+
+  @@index([dealId])
+}
+
+/// Pricing is effective-dated so repricings and margin ratchets are history,
+/// not an overwrite. The live terms are the row with the latest effectiveFrom.
+model FacilityPricing {
+  id            String   @id @default(cuid())
+  facilityId    String
+  facility      Facility @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  effectiveFrom DateTime
+  baseRateCode  String? // e.g. SOFR3M -> ReferenceRate.code
+  spreadBps     Int
+  floorBps      Int      @default(0)
+  oidPct        Decimal  @default(0) @db.Decimal(9, 4)
+  pikBps        Int      @default(0)
+  upfrontFeeBps Int      @default(0)
+  unusedFeeBps  Int      @default(0)
+  reason        String?
+
+  @@unique([facilityId, effectiveFrom])
+  @@index([facilityId, effectiveFrom])
+}
+
+model FacilityObligor {
+  id            String      @id @default(cuid())
+  facilityId    String
+  facility      Facility    @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  legalEntityId String
+  legalEntity   LegalEntity @relation(fields: [legalEntityId], references: [id], onDelete: Cascade)
+  role          EntityRole
+
+  @@unique([facilityId, legalEntityId, role])
+}
+
+model Collateral {
+  id             String       @id @default(cuid())
+  facilityId     String?
+  facility       Facility?    @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  legalEntityId  String?
+  legalEntity    LegalEntity? @relation(fields: [legalEntityId], references: [id])
+  description    String
+  assetType      String // AR | Inventory | PP&E | IP | Equity pledge
+  lienType       LienType     @default(FIRST)
+  appraisedValue Decimal?     @db.Decimal(20, 4)
+  currency       Currency     @default(USD)
+  appraisedOn    DateTime?
+
+  @@index([facilityId])
+}
+
+/// A lending institution — including our own funds' counterparties in a club
+/// or syndicate. `isSelf` marks our own house.
+model Lender {
+  id             String                  @id @default(cuid())
+  orgId          String
+  org            Organization            @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name           String
+  isSelf         Boolean                 @default(false)
+  participations FacilityParticipation[]
+  consents       AmendmentConsent[]
+
+  @@unique([orgId, name])
+}
+
+model FacilityParticipation {
+  id         String    @id @default(cuid())
+  facilityId String
+  facility   Facility  @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  lenderId   String
+  lender     Lender    @relation(fields: [lenderId], references: [id], onDelete: Cascade)
+  commitment Decimal   @db.Decimal(20, 4)
+  funded     Decimal   @default(0) @db.Decimal(20, 4)
+  agentRole  AgentRole @default(PARTICIPANT)
+  joinedOn   DateTime?
+
+  @@unique([facilityId, lenderId])
+  @@index([lenderId])
+}
+
+model Amendment {
+  id                 String             @id @default(cuid())
+  dealId             String
+  deal               Deal               @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  facilityId         String?
+  facility           Facility?          @relation(fields: [facilityId], references: [id])
+  type               AmendmentType
+  status             AmendmentStatus    @default(PROPOSED)
+  title              String
+  description        String?
+  /// Consent threshold under the credit agreement, e.g. 50.01 or 100 (sacred rights).
+  requiredConsentPct Decimal?           @db.Decimal(9, 4)
+  amendmentFeeBps    Int?
+  requestedOn        DateTime           @default(now())
+  effectiveOn        DateTime?
+  consents           AmendmentConsent[]
+
+  @@index([dealId, status])
+}
+
+model AmendmentConsent {
+  id          String        @id @default(cuid())
+  amendmentId String
+  amendment   Amendment     @relation(fields: [amendmentId], references: [id], onDelete: Cascade)
+  lenderId    String?
+  lender      Lender?       @relation(fields: [lenderId], references: [id])
+  userId      String?
+  user        User?         @relation(fields: [userId], references: [id])
+  choice      ConsentChoice
+  /// Share of the facility this consent carries, for threshold math.
+  weightPct   Decimal?      @db.Decimal(9, 4)
+  votedAt     DateTime      @default(now())
+
+  @@unique([amendmentId, lenderId])
+}
+
+model FacilityCashflow {
+  id           String   @id @default(cuid())
+  facilityId   String
+  facility     Facility @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  periodEnd    DateTime
+  label        String
+  beginningBal Decimal  @db.Decimal(20, 4)
+  drawdown     Decimal  @default(0) @db.Decimal(20, 4)
+  paydown      Decimal  @default(0) @db.Decimal(20, 4)
+  pikAccrued   Decimal  @default(0) @db.Decimal(20, 4)
+  interest     Decimal  @default(0) @db.Decimal(20, 4)
+  fees         Decimal  @default(0) @db.Decimal(20, 4)
+  endingBal    Decimal  @db.Decimal(20, 4)
+  isProjected  Boolean  @default(false)
+
+  @@unique([facilityId, periodEnd, isProjected])
+  @@index([facilityId, periodEnd])
+}
+
+// ═══════════ 6. FINANCIALS, FUNDAMENTAL FACTS & COVENANT ENGINE ════════════
+
+/// Data-driven field library. Makes covenant formulas reference a governed
+/// vocabulary instead of hard-coded column names, and records how each field
+/// aggregates across periods (the LTM / calendar-basis problem).
+model FieldDefinition {
+  id                String            @id @default(cuid())
+  code              String            @unique // EBITDA_ADJ, TOT_DEBT, CASH...
+  label             String
+  unit              String // x | % | currency
+  aggregation       FieldAggregation
+  bloombergMnemonic String? // FA <GO> field, e.g. SALES_REV_TURN
+  deriveFormula     String? // e.g. "TOT_DEBT - CASH"
+  facts             FundamentalFact[]
+}
+
+/// Metadata for a reporting period. Values live in FundamentalFact so the
+/// model never needs a schema change to track a new metric.
+model FinancialPeriod {
+  id         String            @id @default(cuid())
+  companyId  String
+  company    Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  periodEnd  DateTime
+  periodType PeriodType
+  label      String // "Q4 2025"
+  currency   Currency          @default(USD)
+  isActual   Boolean           @default(true) // false = projection/budget
+  source     FactSource        @default(COMPLIANCE_CERT)
+  facts      FundamentalFact[]
+
+  @@unique([companyId, periodEnd, periodType, isActual])
+  @@index([companyId, periodEnd])
+}
+
+model FundamentalFact {
+  id             String           @id @default(cuid())
+  companyId      String
+  company        Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  periodId       String?
+  period         FinancialPeriod? @relation(fields: [periodId], references: [id], onDelete: Cascade)
+  periodEnd      DateTime
+  periodType     PeriodType       @default(LTM)
+  fieldCode      String
+  field          FieldDefinition  @relation(fields: [fieldCode], references: [code])
+  value          Decimal          @db.Decimal(20, 4)
+  source         FactSource       @default(BLOOMBERG)
+  isOverride     Boolean          @default(false)
+  overriddenById String?
+  overriddenBy   User?            @relation("FactOverrider", fields: [overriddenById], references: [id])
+  note           String?
+  recordedAt     DateTime         @default(now())
+
+  /// One value per field per period per source lane; overrides layer on top.
+  @@unique([companyId, periodEnd, fieldCode, source])
+  @@index([companyId, periodEnd])
+  @@index([fieldCode])
+}
+
+/// GAAP -> covenant-defined Adjusted EBITDA bridge, with cap flags so the
+/// permitted amount can be computed rather than asserted.
+model EbitdaAdjustment {
+  id           String          @id @default(cuid())
+  companyId    String
+  company      Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  periodEnd    DateTime
+  label        String
+  amount       Decimal         @db.Decimal(20, 4)
+  category     AddbackCategory
+  /// Subject to the agreement's add-back cap (e.g. 25% of unadjusted EBITDA).
+  isCapped     Boolean         @default(false)
+  /// Contractually uncapped — flows through in full.
+  isUncapped   Boolean         @default(false)
+  /// Analyst quality flag (run-rate / unrealized synergies).
+  isAggressive Boolean         @default(false)
+  sourceRef    String?
+  createdById  String?
+  createdBy    User?           @relation(fields: [createdById], references: [id])
+  order        Int             @default(0)
+
+  @@index([companyId, periodEnd])
+}
+
+model CovenantDefinition {
+  id                 String           @id @default(cuid())
+  dealId             String
+  deal               Deal             @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  name               String
+  category           CovenantCategory
+  /// Human-readable expression over FieldDefinition codes.
+  formula            String
+  formulaAst         Json
+  fieldRefs          String[]
+  ebitdaBasis        String           @default("EBITDA_ADJ")
+  operator           CovenantOperator
+  unit               String
+  /// Fallback level used when no threshold step applies.
+  threshold          Decimal          @db.Decimal(18, 6)
+  frequency          String           @default("Quarterly")
+  /// e.g. { field: "RCF_UTIL_PCT", op: ">", value: 40 } for springing tests.
+  springingCondition Json?
+  basketConfig       Json?
+  addbackCapPct      Decimal?         @default(25) @db.Decimal(9, 4)
+  sourceRef          String? // "Credit Agreement §7.11(a)"
+  isActive           Boolean          @default(true)
+  createdAt          DateTime         @default(now())
+
+  steps CovenantThresholdStep[]
+  tests CovenantTest[]
+
+  @@index([dealId, category])
+}
+
+/// Step-down / step-up schedule as rows rather than a JSON blob, so thresholds
+/// are queryable and the dashboard can chart the covenant level over time.
+model CovenantThresholdStep {
+  id            String             @id @default(cuid())
+  definitionId  String
+  definition    CovenantDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+  effectiveFrom DateTime
+  value         Decimal            @db.Decimal(18, 6)
+
+  @@unique([definitionId, effectiveFrom])
+}
+
+model CovenantTest {
+  id               String             @id @default(cuid())
+  definitionId     String
+  definition       CovenantDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+  periodEnd        DateTime
+  testDate         DateTime
+  /// Independently recomputed by the engine from FundamentalFacts.
+  recomputedValue  Decimal?           @db.Decimal(18, 6)
+  /// As stated on the borrower's compliance certificate.
+  reportedValue    Decimal?           @db.Decimal(18, 6)
+  reconDelta       Decimal?           @db.Decimal(18, 6)
+  thresholdApplied Decimal?           @db.Decimal(18, 6)
+  headroomPct      Decimal?           @db.Decimal(9, 4)
+  status           CovenantStatus     @default(UPCOMING)
+  /// Inputs + intermediate steps, so the math is auditable in the UI.
+  formulaSnapshot  Json?
+  waivedById       String?
+  waivedBy         User?              @relation("CovenantWaiver", fields: [waivedById], references: [id])
+  waivedAt         DateTime?
+  note             String?
+
+  @@unique([definitionId, periodEnd])
+  @@index([periodEnd, status])
+  @@index([status])
+}
+
+model ReportingObligation {
+  id                 String              @id @default(cuid())
+  dealId             String
+  deal               Deal                @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  kind               String // Quarterly FS | Annual Audited | Compliance Cert
+  dueDaysAfter       Int
+  fiscalYearEndMonth Int                 @default(12)
+  frequency          String              @default("Quarterly")
+  deliveries         ReportingDelivery[]
+
+  @@index([dealId])
+}
+
+model ReportingDelivery {
+  id           String              @id @default(cuid())
+  obligationId String
+  obligation   ReportingObligation @relation(fields: [obligationId], references: [id], onDelete: Cascade)
+  periodEnd    DateTime
+  dueOn        DateTime
+  deliveredAt  DateTime?
+  status       DeliveryStatus      @default(PENDING)
+  documentId   String?
+  loggedById   String?
+  loggedBy     User?               @relation(fields: [loggedById], references: [id])
+
+  @@unique([obligationId, periodEnd])
+  @@index([dueOn, status])
+}
+
+// ═══════════════ 7. FUNDS, POSITIONS & RETURN ECONOMICS ════════════════════
+
+model Fund {
+  id               String       @id @default(cuid())
+  orgId            String
+  org              Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name             String
+  type             FundType     @default(MAIN_FUND)
+  vintage          Int?
+  currency         Currency     @default(USD)
+  committedCapital Decimal?     @db.Decimal(20, 4)
+  inceptionOn      DateTime?
+
+  positions   Position[]
+  allocations Allocation[]
+  snapshots   ReturnSnapshot[]
+
+  @@unique([orgId, name])
+}
+
+/// Target allocation of a facility across funds/SPVs, set at approval.
+model Allocation {
+  id           String    @id @default(cuid())
+  facilityId   String
+  facility     Facility  @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  fundId       String
+  fund         Fund      @relation(fields: [fundId], references: [id], onDelete: Cascade)
+  targetPct    Decimal?  @db.Decimal(9, 4)
+  targetAmount Decimal?  @db.Decimal(20, 4)
+  approvedAt   DateTime?
+
+  @@unique([facilityId, fundId])
+}
+
+/// A fund's actual economic holding in a facility. This — not Deal — is what
+/// portfolio exposure, marks and returns roll up from.
+model Position {
+  id           String    @id @default(cuid())
+  fundId       String
+  fund         Fund      @relation(fields: [fundId], references: [id], onDelete: Cascade)
+  facilityId   String
+  facility     Facility  @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  currency     Currency  @default(USD)
+  parAmount    Decimal   @db.Decimal(20, 4)
+  fundedAmount Decimal   @default(0) @db.Decimal(20, 4)
+  costBasis    Decimal   @db.Decimal(20, 4)
+  openedOn     DateTime
+  closedOn     DateTime?
+
+  transactions PositionTransaction[]
+  valuations   Valuation[]
+  snapshots    ReturnSnapshot[]
+
+  @@unique([fundId, facilityId])
+  @@index([facilityId])
+}
+
+/// Dated cash flows — the input to XIRR and realized/unrealized splits.
+model PositionTransaction {
+  id         String          @id @default(cuid())
+  positionId String
+  position   Position        @relation(fields: [positionId], references: [id], onDelete: Cascade)
+  type       TransactionType
+  tradeDate  DateTime
+  settleDate DateTime?
+  amount     Decimal         @db.Decimal(20, 4) // signed: outflow negative
+  pricePct   Decimal?        @db.Decimal(9, 4)
+  currency   Currency        @default(USD)
+  note       String?
+
+  @@index([positionId, tradeDate])
+}
+
+model Valuation {
+  id            String          @id @default(cuid())
+  positionId    String
+  position      Position        @relation(fields: [positionId], references: [id], onDelete: Cascade)
+  asOf          DateTime
+  method        ValuationMethod
+  pricePctOfPar Decimal         @db.Decimal(9, 4)
+  fairValue     Decimal         @db.Decimal(20, 4)
+  discountRate  Decimal?        @db.Decimal(9, 4)
+  status        ValuationStatus @default(DRAFT)
+  preparedById  String?
+  preparedBy    User?           @relation("ValuationPreparer", fields: [preparedById], references: [id])
+  approvedById  String?
+  approvedBy    User?           @relation("ValuationApprover", fields: [approvedById], references: [id])
+  approvedAt    DateTime?
+  note          String?
+
+  @@unique([positionId, asOf, method])
+  @@index([asOf, status])
+}
+
+/// Materialized IRR/MOIC so dashboard tiles don't recompute XIRR per request.
+model ReturnSnapshot {
+  id          String    @id @default(cuid())
+  positionId  String?
+  position    Position? @relation(fields: [positionId], references: [id], onDelete: Cascade)
+  fundId      String?
+  fund        Fund?     @relation(fields: [fundId], references: [id], onDelete: Cascade)
+  asOf        DateTime
+  grossIrrPct Decimal?  @db.Decimal(9, 4)
+  netIrrPct   Decimal?  @db.Decimal(9, 4)
+  moic        Decimal?  @db.Decimal(9, 4)
+  realized    Decimal?  @db.Decimal(20, 4)
+  unrealized  Decimal?  @db.Decimal(20, 4)
+
+  @@index([asOf])
+  @@index([fundId, asOf])
+  @@index([positionId, asOf])
+}
+
+// ═══════════════ 8. RISK HISTORY, ALERTS & DASHBOARD SUPPORT ═══════════════
+
+/// Rating migration over time — replaces an overwritten scalar so the
+/// dashboard can show upgrades/downgrades and migration matrices.
+model RatingHistory {
+  id          String    @id @default(cuid())
+  companyId   String
+  company     Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  asOf        DateTime
+  rating      String // internal scale, e.g. "1".."7"
+  trend       RiskTrend @default(STABLE)
+  rationale   String?
+  changedById String?
+  changedBy   User?     @relation(fields: [changedById], references: [id])
+
+  @@unique([companyId, asOf])
+  @@index([asOf])
+}
+
+model WatchlistEvent {
+  id            String   @id @default(cuid())
+  companyId     String
+  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  asOf          DateTime
+  isOnWatchlist Boolean
+  reason        String?
+  changedById   String?
+  changedBy     User?    @relation(fields: [changedById], references: [id])
+
+  @@index([companyId, asOf])
+}
+
+/// Generic time-series metric store powering dashboard tiles and trend charts
+/// without bespoke tables per KPI.
+model KpiSnapshot {
+  id        String       @id @default(cuid())
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  asOf      DateTime
+  /// What the metric is scoped to: ORG | FUND | DEAL | POSITION | COMPANY
+  scopeType String
+  scopeId   String?
+  metric    String // committed_capital | wtd_leverage | breach_count
+  value     Decimal      @db.Decimal(24, 6)
+  currency  Currency?
+
+  @@unique([orgId, asOf, scopeType, scopeId, metric])
+  @@index([metric, asOf])
+}
+
+model Alert {
+  id             String        @id @default(cuid())
+  orgId          String
+  org            Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  dealId         String?
+  deal           Deal?         @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  kind           String // covenant_breach | recon_flag | late_filing
+  severity       AlertSeverity @default(WARNING)
+  state          AlertState    @default(OPEN)
+  title          String
+  body           String?
+  /// Stable key so a recurring condition updates one alert instead of spamming.
+  dedupeKey      String?
+  assigneeId     String?
+  assignee       User?         @relation("AlertAssignee", fields: [assigneeId], references: [id])
+  raisedAt       DateTime      @default(now())
+  acknowledgedAt DateTime?
+  resolvedAt     DateTime?
+
+  @@unique([orgId, dedupeKey])
+  @@index([orgId, state, severity])
+  @@index([dealId])
+}
+
+/// Per-user saved filters/layout for a dashboard route.
+model SavedView {
+  id       String       @id @default(cuid())
+  orgId    String
+  org      Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name     String
+  route    String // /portfolio | /covenants
+  filters  Json
+  isShared Boolean      @default(false)
+
+  @@unique([userId, route, name])
+}
+
+// ═══════════════════════ 9. REFERENCE & MARKET DATA ════════════════════════
+
+model ReferenceRate {
+  id      String   @id @default(cuid())
+  code    String // SOFR3M | EURIBOR3M
+  asOf    DateTime
+  ratePct Decimal  @db.Decimal(9, 6)
+
+  @@unique([code, asOf])
+}
+
+model FxRate {
+  id    String   @id @default(cuid())
+  base  Currency
+  quote Currency
+  asOf  DateTime
+  rate  Decimal  @db.Decimal(18, 8)
+
+  @@unique([base, quote, asOf])
+}
+
+/// Persisted market comparables (e.g. Bloomberg DLEN direct-lending prints)
+/// so pricing context is queryable and historical, not a live-only API call.
+model MarketComp {
+  id           String        @id @default(cuid())
+  borrowerName String
+  sector       String?
+  facilityType FacilityType?
+  size         Decimal?      @db.Decimal(20, 4)
+  currency     Currency      @default(USD)
+  spreadBps    Int?
+  oidPct       Decimal?      @db.Decimal(9, 4)
+  leverage     Decimal?      @db.Decimal(18, 6)
+  yieldPct     Decimal?      @db.Decimal(9, 4)
+  pricedOn     DateTime
+  source       String        @default("BLOOMBERG")
+
+  @@index([sector, pricedOn])
+}
