@@ -14,16 +14,17 @@ datasource db {
 }
 
 model Sponsor {
-  id                String     @id @default(cuid())
-  name              String
-  type              String // "PE" | "Family Office" | "Independent Sponsor"
-  aum               Float? // $MM
-  hqCity            String?
-  relationshipOwner String?
-  vintage           Int?
-  deals             Deal[]
-  borrowers         Borrower[]
-  createdAt         DateTime   @default(now())
+  id                  String     @id @default(cuid())
+  name                String
+  type                String // "PE" | "Family Office" | "Independent Sponsor"
+  aum                 Float? // $MM
+  hqCity              String?
+  relationshipOwnerId String?
+  relationshipOwner   User?      @relation("SponsorCoverage", fields: [relationshipOwnerId], references: [id])
+  vintage             Int?
+  deals               Deal[]
+  borrowers           Borrower[]
+  createdAt           DateTime   @default(now())
 }
 
 model Borrower {
@@ -62,7 +63,8 @@ model Deal {
   dealSize      Float // committed $MM
   useOfProceeds String?
   targetClose   DateTime?
-  leadName      String?
+  leadId        String?
+  lead          User?                @relation("DealLead", fields: [leadId], references: [id])
   probability   Int?                 @default(50)
   isPrivileged  Boolean              @default(true) // info-barrier flag
   thesis        String?
@@ -107,11 +109,14 @@ model DealTeamMember {
   id          String    @id @default(cuid())
   dealId      String
   deal        Deal      @relation(fields: [dealId], references: [id], onDelete: Cascade)
-  name        String
-  title       String?
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   role        String // Deal Lead|Analyst|IC Member|Compliance|Read-only
   wallCrossed Boolean   @default(true)
   crossedAt   DateTime?
+
+  @@unique([dealId, userId])
+  @@index([userId])
 }
 
 model Folder {
@@ -124,32 +129,38 @@ model Folder {
 }
 
 model Document {
-  id         String   @id @default(cuid())
-  dealId     String
-  deal       Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
-  folderId   String?
-  folder     Folder?  @relation(fields: [folderId], references: [id])
-  name       String
-  kind       String // CIM|Financials|LegalDocs|DDReport|Model|Memo|Other
-  fileType   String   @default("pdf") // pdf|xlsx|docx
-  sizeKb     Int      @default(0)
-  version    Int      @default(1)
-  privilege  String   @default("Deal Team") // Deal Team|IC|Compliance|All
-  bodyText   String? // synthetic extractable text for AI Q&A
-  uploadedBy String?
-  uploadedAt DateTime @default(now())
+  id                 String   @id @default(cuid())
+  dealId             String
+  deal               Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  folderId           String?
+  folder             Folder?  @relation(fields: [folderId], references: [id])
+  name               String
+  kind               String // CIM|Financials|LegalDocs|DDReport|Model|Memo|Other
+  fileType           String   @default("pdf") // pdf|xlsx|docx
+  sizeKb             Int      @default(0)
+  version            Int      @default(1)
+  privilege          String   @default("Deal Team") // Deal Team|IC|Compliance|All
+  bodyText           String? // synthetic extractable text for AI Q&A
+  uploadedById       String?
+  uploadedBy         User?    @relation(fields: [uploadedById], references: [id])
+  /// External parties (sponsor, counsel) aren't users; keep their name verbatim.
+  uploadedByExternal String?
+  uploadedAt         DateTime @default(now())
 }
 
 model DDQItem {
-  id       String  @id @default(cuid())
-  dealId   String
-  deal     Deal    @relation(fields: [dealId], references: [id], onDelete: Cascade)
-  category String // Commercial|Financial|Legal|Management|ESG
-  question String
-  status   String  @default("Open") // Open|In Review|Cleared|Flag
-  answer   String?
-  assignee String?
-  order    Int     @default(0)
+  id               String  @id @default(cuid())
+  dealId           String
+  deal             Deal    @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  category         String // Commercial|Financial|Legal|Management|ESG
+  question         String
+  status           String  @default("Open") // Open|In Review|Cleared|Flag
+  answer           String?
+  assigneeId       String?
+  assignee         User?   @relation(fields: [assigneeId], references: [id])
+  /// Third-party owner (e.g. outside counsel) when not an internal user.
+  assigneeExternal String?
+  order            Int     @default(0)
 }
 
 model CreditMemo {
@@ -246,7 +257,8 @@ model LifecycleEvent {
   amount        Float?
   status        String   @default("Completed") // Pending|Completed|Executed
   effectiveDate DateTime
-  createdBy     String?
+  createdById   String?
+  createdBy     User?    @relation(fields: [createdById], references: [id])
   createdAt     DateTime @default(now())
 }
 
@@ -254,21 +266,26 @@ model ICVote {
   id      String   @id @default(cuid())
   dealId  String
   deal    Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
-  voter   String
+  voterId String
+  voter   User     @relation(fields: [voterId], references: [id])
   vote    String // Approve|Reject|Abstain|Conditional
   comment String?
   votedAt DateTime @default(now())
+
+  @@unique([dealId, voterId])
 }
 
 model Task {
-  id       String    @id @default(cuid())
-  dealId   String
-  deal     Deal      @relation(fields: [dealId], references: [id], onDelete: Cascade)
-  title    String
-  status   String    @default("Todo") // Todo|Doing|Done
-  priority String    @default("Medium") // Low|Medium|High
-  assignee String?
-  dueDate  DateTime?
+  id               String    @id @default(cuid())
+  dealId           String
+  deal             Deal      @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  title            String
+  status           String    @default("Todo") // Todo|Doing|Done
+  priority         String    @default("Medium") // Low|Medium|High
+  assigneeId       String?
+  assignee         User?     @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  assigneeExternal String?
+  dueDate          DateTime?
 }
 
 model Note {
@@ -277,7 +294,8 @@ model Note {
   deal      Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
   kind      String   @default("MgmtCall") // MgmtCall|Internal|SiteVisit
   title     String?
-  author    String
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id])
   body      String
   createdAt DateTime @default(now())
 }
@@ -286,7 +304,9 @@ model ActivityLog {
   id        String   @id @default(cuid())
   dealId    String?
   deal      Deal?    @relation(fields: [dealId], references: [id], onDelete: Cascade)
-  actor     String
+  actorId   String?
+  actor     User?    @relation(fields: [actorId], references: [id])
+  /// Role the actor held when the action occurred (historical, not current).
   role      String?
   action    String
   target    String?
@@ -394,4 +414,54 @@ model ReportingDelivery {
   deliveredDate DateTime?
   status        String              @default("Pending") // Delivered | Late | Missing | Pending
   documentId    String?
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Identity & access. Replaces the free-text actor strings that used to be
+// scattered across the schema, so every action is attributable to a real
+// person and permissions derive from org membership rather than a cookie.
+// ─────────────────────────────────────────────────────────────────────────
+
+model Organization {
+  id          String          @id @default(cuid())
+  name        String
+  slug        String          @unique
+  createdAt   DateTime        @default(now())
+  memberships OrgMembership[]
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  title     String?
+  initials  String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  memberships       OrgMembership[]
+  dealRoles         DealTeamMember[]
+  sponsorsCovered   Sponsor[]        @relation("SponsorCoverage")
+  dealsLed          Deal[]           @relation("DealLead")
+  documentsUploaded Document[]
+  ddqAssignments    DDQItem[]
+  tasksAssigned     Task[]           @relation("TaskAssignee")
+  notes             Note[]
+  icVotes           ICVote[]
+  eventsCreated     LifecycleEvent[]
+  activity          ActivityLog[]
+}
+
+model OrgMembership {
+  id       String       @id @default(cuid())
+  orgId    String
+  org      Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Deal Lead | Analyst | IC Member | Compliance | Read-only
+  role     String
+  joinedAt DateTime     @default(now())
+
+  @@unique([orgId, userId])
+  @@index([userId])
 }

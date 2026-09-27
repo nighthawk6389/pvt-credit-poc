@@ -10,9 +10,9 @@ import {
   CircleDot,
 } from "lucide-react";
 
-import { getActiveRole } from "@/lib/auth/server";
+import { getActiveRole, getSession } from "@/lib/auth/server";
 import { getDashboardData } from "@/server/queries/dashboard";
-import { ROLE_META } from "@/lib/auth/roles";
+
 import { fmtMM, fmtPct, fmtX, fmtSpread, fmtDate } from "@/lib/utils";
 import { PageHeader } from "@/components/shell/page-header";
 import { KpiCard } from "@/components/charts/kpi-card";
@@ -30,15 +30,16 @@ import { CovenantChip, RiskRatingBadge } from "@/components/deal/badges";
 
 export default async function DashboardPage() {
   const role = await getActiveRole();
+  const session = await getSession();
   const data = await getDashboardData(role);
   const { kpis } = data;
-  const meta = ROLE_META[role];
+
 
   return (
     <div className="mx-auto max-w-7xl">
       <PageHeader
         title="Portfolio Dashboard"
-        description={`Welcome back, ${meta.person.split(" ")[0]}. Here's the book as of ${fmtDate(new Date())}.`}
+        description={`Welcome back, ${session?.user.name.split(" ")[0] ?? "there"}. Here's the book as of ${fmtDate(new Date())}.`}
       >
         <Button asChild variant="outline" size="sm">
           <Link href="/pipeline">

@@ -87,6 +87,7 @@ export async function getDashboardData(role: Role) {
     where: { OR: [{ dealId: { in: visibleIds } }, { dealId: null }] },
     orderBy: { createdAt: "desc" },
     take: 8,
+    include: { actor: true },
   });
 
   return {
@@ -121,7 +122,7 @@ export async function getDashboardData(role: Role) {
     upcoming,
     activity: activity.map((a) => ({
       id: a.id,
-      actor: a.actor,
+      actor: a.actor?.name ?? "System",
       role: a.role,
       action: a.action,
       target: a.target,

@@ -10,12 +10,12 @@ export async function updateDdqStatus(
   itemId: string,
   status: string,
 ) {
-  const { actor, role } = await guard("edit", "deal");
+  const { actorId, role } = await guard("edit", "deal");
   const item = await db.dDQItem.update({
     where: { id: itemId },
     data: { status },
   });
-  await logActivity(dealId, actor, role, `marked a DDQ item "${status}"`, item.question.slice(0, 48));
+  await logActivity(dealId, actorId, role, `marked a DDQ item "${status}"`, item.question.slice(0, 48));
   revalidatePath(`/deals/${dealId}/diligence`);
 }
 
@@ -23,17 +23,17 @@ export async function addNote(
   dealId: string,
   data: { title: string; body: string; kind: string },
 ) {
-  const { actor, role } = await guard("edit", "note");
+  const { actorId, role } = await guard("edit", "note");
   await db.note.create({
     data: {
       dealId,
       title: data.title,
       body: data.body,
       kind: data.kind,
-      author: actor,
+      authorId: actorId,
     },
   });
-  await logActivity(dealId, actor, role, "added a note", data.title);
+  await logActivity(dealId, actorId, role, "added a note", data.title);
   revalidatePath(`/deals/${dealId}/diligence`);
   revalidatePath(`/deals/${dealId}`);
 }

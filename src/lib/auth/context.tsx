@@ -1,48 +1,41 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
 
 import { DEFAULT_ROLE, type Role } from "./roles";
-import { ROLE_COOKIE } from "./constants";
 
-type RoleContextValue = {
+export interface ClientSession {
+  userId: string;
+  name: string;
+  title: string | null;
+  initials: string | null;
   role: Role;
-  setRole: (role: Role) => void;
-};
+}
 
-const RoleContext = React.createContext<RoleContextValue | null>(null);
+const SessionContext = React.createContext<ClientSession | null>(null);
 
-export function RoleProvider({
-  initialRole,
+/** Publishes the server-resolved session to client components. */
+export function SessionProvider({
+  session,
   children,
 }: {
-  initialRole: Role;
+  session: ClientSession | null;
   children: React.ReactNode;
 }) {
-  const router = useRouter();
-  const [role, setRoleState] = React.useState<Role>(initialRole ?? DEFAULT_ROLE);
-
-  const setRole = React.useCallback(
-    (next: Role) => {
-      setRoleState(next);
-      // Persist to cookie so server components/actions read the same value,
-      // then refresh to re-fetch server-filtered data (wall-cross demo).
-      document.cookie = `${ROLE_COOKIE}=${encodeURIComponent(next)}; path=/; max-age=31536000; samesite=lax`;
-      router.refresh();
-    },
-    [router],
-  );
-
   return (
-    <RoleContext.Provider value={{ role, setRole }}>
-      {children}
-    </RoleContext.Provider>
+    <SessionContext.Provider value={session}>{children}</SessionContext.Provider>
   );
 }
 
-export function useRole(): RoleContextValue {
-  const ctx = React.useContext(RoleContext);
-  if (!ctx) throw new Error("useRole must be used within a RoleProvider");
-  return ctx;
+export function useSession(): ClientSession | null {
+  return React.useContext(SessionContext);
+}
+
+/**
+ * The acting user's role. Kept as a named hook because most client components
+ * only gate on the role; identity now comes from the database, not the cookie.
+ */
+export function useRole(): { role: Role } {
+  const session = React.useContext(SessionContext);
+  return { role: session?.role ?? DEFAULT_ROLE };
 }

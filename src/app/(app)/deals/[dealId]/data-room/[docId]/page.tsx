@@ -46,7 +46,7 @@ export default async function DocumentPage({
               <h1 className="font-semibold leading-snug">{doc.name}</h1>
               <div className="text-muted-foreground mt-1 text-xs">
                 {doc.folder?.name} · {doc.kind} · v{doc.version} ·{" "}
-                {(doc.sizeKb / 1024).toFixed(1)}MB · uploaded by {doc.uploadedBy} on{" "}
+                {(doc.sizeKb / 1024).toFixed(1)}MB · uploaded by {doc.uploadedBy?.name ?? doc.uploadedByExternal} on{" "}
                 {fmtDate(doc.uploadedAt)}
               </div>
             </div>

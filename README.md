@@ -38,6 +38,25 @@ under `prisma/migrations/`. `npm run db:reset` drops, re-migrates and re-seeds.
 > returns `Decimal` objects whose arithmetic does not behave like `number`. The
 > canonical target model in `docs/data-model/` shows the intended end state.
 
+## Identity & access
+
+Users, organizations and memberships are real rows. Every actor column is a
+foreign key, so actions are attributable and permissions derive from
+`OrgMembership.role` rather than a client-supplied value:
+
+- `getSession()` (`src/lib/auth/session.ts`) is the only place identity is
+  resolved — memoized per render with React `cache`, and `server-only`.
+- Switching user goes through the `switchUser` Server Function, which sets an
+  **httpOnly** cookie (cookies cannot be written while rendering a Server
+  Component, and httpOnly stops the browser forging an identity).
+- Third parties (sponsors, counsel, advisors) are deliberately *not* users;
+  their names live in `*External` columns beside the FK.
+
+> ⚠️ This is identity, **not authentication**. There is still no credential
+> check — the cookie names which seeded user you act as. Every call site already
+> routes through `getSession()`, so adding real verification is contained to
+> that one function.
+
 ## Deploying to Vercel
 
 The repo ships a `vercel.json`; the build runs
@@ -56,5 +75,7 @@ Writes are now durable and shared across all serverless instances.
 - `src/app/(app)/*` — dashboard, pipeline, deal workspace, portfolio, covenants, sponsors, compliance
 - `src/lib/bloomberg/*` — simulated Bloomberg adapter (DLEN / PORT / DRSK / CRPR / structuring), swappable for BLPAPI
 - `src/lib/copilot/*` — mocked, real-ready AI copilot (doc Q&A, memo drafting, covenant extraction)
-- `src/lib/auth/*` — simulated role-based access & information barriers
+- `src/lib/auth/*` — identity & access: `session.ts` is the data access layer
+  (cached, server-only) resolving the acting `User` + `OrgMembership`; `roles.ts`
+  holds the permission matrix and information-barrier rules
 - `src/server/{queries,actions}/*` — typed reads & server-action mutations

@@ -1,13 +1,13 @@
-import { cookies } from "next/headers";
+import { DEFAULT_ROLE, type Role } from "./roles";
+import { getSession } from "./session";
 
-import { DEFAULT_ROLE, isValidRole, type Role } from "./roles";
-import { ROLE_COOKIE } from "./constants";
+export { USER_COOKIE } from "./constants";
+export { getSession, listUsers } from "./session";
 
-export { ROLE_COOKIE };
-
-/** Read the active role from the cookie (server components / actions). */
+/**
+ * The acting user's org role. Retained as a thin wrapper over getSession() so
+ * the many server components that only need the role stay unchanged.
+ */
 export async function getActiveRole(): Promise<Role> {
-  const store = await cookies();
-  const value = store.get(ROLE_COOKIE)?.value;
-  return isValidRole(value) ? value : DEFAULT_ROLE;
+  return (await getSession())?.role ?? DEFAULT_ROLE;
 }

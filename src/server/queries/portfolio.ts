@@ -7,6 +7,7 @@ export async function getPipeline(role: Role) {
     include: {
       borrower: { include: { financials: { orderBy: { periodEnd: "desc" }, take: 1 } } },
       sponsor: true,
+      lead: true,
       facilities: { orderBy: { order: "asc" }, take: 1 },
     },
     orderBy: { dealSize: "desc" },
@@ -26,7 +27,7 @@ export async function getPipeline(role: Role) {
       leverage: d.borrower.financials[0]?.netLeverage ?? null,
       ebitda: d.borrower.financials[0]?.ebitda ?? null,
       probability: d.probability,
-      lead: d.leadName,
+      lead: d.lead?.name ?? null,
       targetClose: d.targetClose?.toISOString() ?? null,
       isPrivileged: d.isPrivileged,
     }));
@@ -131,6 +132,7 @@ export async function getCovenantCalendar(role: Role) {
 export async function getSponsors(role: Role) {
   const sponsors = await db.sponsor.findMany({
     include: {
+      relationshipOwner: true,
       deals: {
         include: {
           borrower: true,
@@ -149,7 +151,7 @@ export async function getSponsors(role: Role) {
       type: s.type,
       aum: s.aum,
       hqCity: s.hqCity,
-      owner: s.relationshipOwner,
+      owner: s.relationshipOwner?.name ?? null,
       vintage: s.vintage,
       dealCount: visible.length,
       closedCount: closed.length,
@@ -167,13 +169,14 @@ export async function getSponsors(role: Role) {
 
 export async function getComplianceData() {
   const deals = await db.deal.findMany({
-    include: { team: true, borrower: true },
+    include: { team: { include: { user: true } }, borrower: true },
     orderBy: { createdAt: "desc" },
   });
   const activity = await db.activityLog.findMany({
     where: { OR: [{ action: { contains: "wall" } }, { action: { contains: "cross" } }] },
     orderBy: { createdAt: "desc" },
     take: 20,
+    include: { actor: true },
   });
   return {
     deals: deals.map((d) => ({
@@ -183,16 +186,16 @@ export async function getComplianceData() {
       isPrivileged: d.isPrivileged,
       stage: d.stage,
       team: d.team.map((m) => ({
-        name: m.name,
+        name: m.user.name,
         role: m.role,
-        title: m.title,
+        title: m.user.title,
         wallCrossed: m.wallCrossed,
         crossedAt: m.crossedAt?.toISOString() ?? null,
       })),
     })),
     activity: activity.map((a) => ({
       id: a.id,
-      actor: a.actor,
+      actor: a.actor?.name ?? "System",
       role: a.role,
       action: a.action,
       target: a.target,
