@@ -9,6 +9,8 @@ economics**, and the **time-series history** that dashboard analytics depend on.
 - **XSD view:** [`schema.canonical.xsd`](./schema.canonical.xsd) — the same model as XML Schema,
   generated from the Prisma file. Often the faster read: types, enums and foreign keys are all
   spelled out in one place. See [§8](#8-xsd-view).
+- **Interactive explorer:** [`explorer.html`](./explorer.html) — click any entity to see what it
+  references and what references it, then dive through the graph. See [§9](#9-interactive-explorer).
 - **Target:** PostgreSQL (native enums, `Decimal` money, composite indexes, `String[]`, `Json`).
 - **Status:** design artifact. It is deliberately *separate* from the running app schema
   (`prisma/schema.prisma`) and generates to its own client output, so it cannot clobber
@@ -30,6 +32,7 @@ CANONICAL_DATABASE_URL="postgresql://u:p@localhost:5432/canonical" \
 6. [What this changes vs. the current schema](#6-what-this-changes-vs-the-current-schema)
 7. [Adoption path](#7-adoption-path)
 8. [XSD view](#8-xsd-view)
+9. [Interactive explorer](#9-interactive-explorer)
 
 ---
 
@@ -374,3 +377,46 @@ Constraints that actually bite, verified by mutating that file:
 - **`Decimal` bounds are structural, not semantic.** `Percent` (9,4) is reused by a
   few fields that hold small multiples rather than percentages (notably
   `ReturnSnapshot.moic`); the field's own `xs:documentation` is authoritative.
+
+---
+
+## 9. Interactive explorer
+
+[`explorer.html`](./explorer.html) is a self-contained page — no build step, no
+server, no network calls except the webfonts — for walking the model by
+clicking rather than reading. Open it in a browser.
+
+```bash
+node docs/data-model/generate-explorer.mjs     # or: npm run docs:explorer
+open docs/data-model/explorer.html
+```
+
+What it gives you that the diagrams in §3 cannot:
+
+| | |
+|---|---|
+| **Neighbourhood diagram** | The selected entity in the middle, what references it on the left, what it references on the right — the direction the foreign keys actually point. Every box is clickable, so you dive through the graph one hop at a time. |
+| **References / Referenced by** | The full edge list either way. Expanding a row gives the FK column, nullability, cardinality, `onDelete` behaviour, and both sides' navigation names. |
+| **Columns** | Type, nullability, defaults, PK/unique flags and the `///` note for each column. Enum types are links — click `DealStage` and you get its values and every column that uses it. |
+| **Trail** | A breadcrumb of the path you took, so a four-hop dive is retraceable and each step is clickable. |
+| **Search** | Matches entity names *and* column names — typing `ebitda` finds the three entities that carry one. |
+| **Degree** | The number beside each entity in the sidebar is its edge count, so the hubs are obvious: `User` 31, `Deal` 24, `Organization` and `Company` 11 each. |
+
+Deep links work: `explorer.html#CovenantTest` opens straight to that entity.
+The page remembers the last entity you looked at, follows your light/dark
+setting, and works down to phone width.
+
+### How it is built
+
+`generate-explorer.mjs` reads the schema and injects the graph as JSON into
+`explorer.template.html`, which holds all the markup and design. The template is
+hand-written and editable; the data is generated. Both generators share one
+reader, [`parse-prisma.mjs`](./parse-prisma.mjs), so the XSD and the explorer
+can never disagree about the model.
+
+```
+schema.canonical.prisma
+   └── parse-prisma.mjs ──┬── generate-xsd.mjs ────────────────→ schema.canonical.xsd
+                          └── generate-explorer.mjs ──┐
+                              explorer.template.html ─┴───────→ explorer.html
+```

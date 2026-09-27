@@ -15,7 +15,8 @@
     "test:watch": "vitest",
     "setup": "npm install && prisma generate && prisma db push && npm run db:seed",
     "postinstall": "prisma generate",
-    "docs:xsd": "node docs/data-model/generate-xsd.mjs"
+    "docs:xsd": "node docs/data-model/generate-xsd.mjs",
+    "docs:explorer": "node docs/data-model/generate-explorer.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

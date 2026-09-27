@@ -17,143 +17,18 @@
  *   - Optional (`?`) fields become minOccurs="0".
  *   - `///` doc comments and trailing `//` notes become xs:documentation.
  */
-import { readFileSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { parseSchema, plural } from "./parse-prisma.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SRC = join(here, "schema.canonical.prisma");
 const OUT = join(here, "schema.canonical.xsd");
 const NS = "urn:lumen:private-credit-deal-room:1.0";
 
-const src = readFileSync(SRC, "utf8");
-const lines = src.split("\n");
-
-// ── pass 1: what names are enums, what names are models ───────────────────
-const enumNames = new Set();
-const modelNames = new Set();
-for (const line of lines) {
-  const e = /^enum\s+(\w+)\s*\{/.exec(line);
-  if (e) enumNames.add(e[1]);
-  const m = /^model\s+(\w+)\s*\{/.exec(line);
-  if (m) modelNames.add(m[1]);
-}
-
-// ── pass 2: parse enums, models, fields, section banners ──────────────────
-const enums = [];
-const models = [];
-let section = null;
-let subsection = null;
-let doc = [];
-let cur = null;
-
-const flushDoc = () => {
-  const d = doc.join(" ").trim();
-  doc = [];
-  return d || null;
-};
-
-for (const raw of lines) {
-  const line = raw.replace(/\s+$/, "");
-  if (!line.trim()) { if (!cur) doc = []; continue; }
-
-  const banner = /^\/\/\s*═+\s*(\d+\.\s*.+?)\s*═+$/.exec(line);
-  if (banner) { section = tidyBanner(banner[1]); subsection = null; doc = []; continue; }
-  const sub = /^\/\/\s*─+\s*(.+?)\s*─+$/.exec(line);
-  if (sub) { subsection = tidyBanner(sub[1]); doc = []; continue; }
-
-  const tripleSlash = /^\s*\/\/\/\s?(.*)$/.exec(line);
-  if (tripleSlash) { doc.push(tripleSlash[1].trim()); continue; }
-  if (/^\s*\/\//.test(line)) { if (!cur) doc = []; continue; }
-
-  const enumOpen = /^enum\s+(\w+)\s*\{/.exec(line);
-  if (enumOpen) {
-    cur = { kind: "enum", name: enumOpen[1], doc: flushDoc(), section, subsection, values: [] };
-    continue;
-  }
-  const modelOpen = /^model\s+(\w+)\s*\{/.exec(line);
-  if (modelOpen) {
-    cur = { kind: "model", name: modelOpen[1], doc: flushDoc(), section, subsection, fields: [], constraints: [] };
-    continue;
-  }
-  if (/^\}/.test(line)) {
-    if (cur?.kind === "enum") enums.push(cur);
-    if (cur?.kind === "model") models.push(cur);
-    cur = null; doc = [];
-    continue;
-  }
-  if (!cur) continue;
-
-  if (cur.kind === "enum") {
-    const v = /^\s*(\w+)\s*$/.exec(line);
-    if (v) cur.values.push({ name: v[1], doc: flushDoc() });
-    continue;
-  }
-
-  // block-level attribute: @@unique / @@index / @@id / @@map
-  const block = /^\s*@@(\w+)\((.*)\)\s*$/.exec(line);
-  if (block) { cur.constraints.push({ kind: block[1], args: block[2] }); doc = []; continue; }
-
-  const f = /^\s*(\w+)\s+([\w]+)(\[\])?(\?)?\s*(.*)$/.exec(line);
-  if (!f) { doc = []; continue; }
-  const [, name, baseType, list, optional, restRaw] = f;
-
-  // split a trailing `// note` off the attribute text
-  const noteIdx = restRaw.indexOf("//");
-  const attrs = (noteIdx >= 0 ? restRaw.slice(0, noteIdx) : restRaw).trim();
-  const note = noteIdx >= 0 ? restRaw.slice(noteIdx + 2).trim() : null;
-
-  const field = {
-    name,
-    baseType,
-    isList: Boolean(list),
-    optional: Boolean(optional),
-    doc: flushDoc(),
-    note,
-    isId: /@id\b/.test(attrs),
-    isUnique: /@unique\b/.test(attrs),
-    isUpdatedAt: /@updatedAt\b/.test(attrs),
-    decimal: readDecimal(attrs),
-    default: readDefault(attrs),
-    relation: readRelation(attrs),
-    isRelation: modelNames.has(baseType),
-  };
-  cur.fields.push(field);
-}
-
-function tidyBanner(s) {
-  return s.replace(/\s+/g, " ").trim();
-}
-function readDecimal(attrs) {
-  const m = /@db\.Decimal\((\d+)\s*,\s*(\d+)\)/.exec(attrs);
-  return m ? { precision: Number(m[1]), scale: Number(m[2]) } : null;
-}
-function readDefault(attrs) {
-  const m = /@default\(([^()]*(?:\([^()]*\)[^()]*)*)\)/.exec(attrs);
-  if (!m) return null;
-  const v = m[1].trim();
-  if (/^(now|cuid|uuid|autoincrement|dbgenerated)\s*\(/.test(v)) return null;
-  if (/^".*"$/.test(v)) return v.slice(1, -1);
-  return v;
-}
-function readRelation(attrs) {
-  if (!/@relation\(/.test(attrs)) return null;
-  const fields = /fields:\s*\[([^\]]*)\]/.exec(attrs);
-  const refs = /references:\s*\[([^\]]*)\]/.exec(attrs);
-  if (!fields || !refs) return null;
-  const f = fields[1].split(",").map((s) => s.trim()).filter(Boolean);
-  const r = refs[1].split(",").map((s) => s.trim()).filter(Boolean);
-  return { fields: f, references: r };
-}
-
-// ── naming ────────────────────────────────────────────────────────────────
-const PLURAL_OVERRIDES = { Collateral: "CollateralItems" };
-function plural(name) {
-  if (PLURAL_OVERRIDES[name]) return PLURAL_OVERRIDES[name];
-  if (/[^aeiou]y$/.test(name)) return name.slice(0, -1) + "ies";
-  if (/(s|x|z|ch|sh)$/.test(name)) return name + "es";
-  return name + "s";
-}
+const { enums, models, enumNames } = parseSchema(SRC);
 
 // ── decimal simpleTypes ───────────────────────────────────────────────────
 const DECIMAL_NAMES = {
