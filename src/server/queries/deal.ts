@@ -8,7 +8,7 @@ export async function getDealHeader(id: string, role: Role) {
     include: {
       borrower: true,
       sponsor: true,
-      team: true,
+      team: { include: { user: true } },
       facilities: { orderBy: { order: "asc" } },
     },
   });
@@ -29,10 +29,10 @@ export async function getDealOverview(id: string) {
       },
       sponsor: true,
       facilities: { orderBy: { order: "asc" } },
-      team: true,
-      tasks: { orderBy: { dueDate: "asc" } },
-      notes: { orderBy: { createdAt: "desc" } },
-      activity: { orderBy: { createdAt: "desc" }, take: 10 },
+      team: { include: { user: true } },
+      tasks: { orderBy: { dueDate: "asc" }, include: { assignee: true } },
+      notes: { orderBy: { createdAt: "desc" }, include: { author: true } },
+      activity: { orderBy: { createdAt: "desc" }, take: 10, include: { actor: true } },
       ddqItems: true,
       votes: true,
       covenants: { include: { tests: true } },
@@ -47,11 +47,12 @@ export async function getDataRoom(id: string) {
     include: {
       folders: {
         orderBy: { order: "asc" },
-        include: { documents: { orderBy: { name: "asc" } } },
+        include: { documents: { orderBy: { name: "asc" }, include: { uploadedBy: true } } },
       },
       documents: {
         where: { folderId: null },
         orderBy: { name: "asc" },
+        include: { uploadedBy: true },
       },
     },
   });
@@ -60,7 +61,7 @@ export async function getDataRoom(id: string) {
 export async function getDocument(dealId: string, docId: string) {
   return db.document.findFirst({
     where: { id: docId, dealId },
-    include: { deal: { include: { borrower: true } }, folder: true },
+    include: { deal: { include: { borrower: true } }, folder: true, uploadedBy: true },
   });
 }
 
@@ -68,8 +69,8 @@ export async function getDiligence(id: string) {
   return db.deal.findUnique({
     where: { id },
     include: {
-      ddqItems: { orderBy: { order: "asc" } },
-      notes: { orderBy: { createdAt: "desc" } },
+      ddqItems: { orderBy: { order: "asc" }, include: { assignee: true } },
+      notes: { orderBy: { createdAt: "desc" }, include: { author: true } },
       borrower: true,
     },
   });
@@ -80,7 +81,7 @@ export async function getMemo(id: string) {
     where: { id },
     include: {
       memo: true,
-      votes: { orderBy: { votedAt: "asc" } },
+      votes: { orderBy: { votedAt: "asc" }, include: { voter: true } },
       borrower: true,
       documents: { select: { id: true, name: true, bodyText: true } },
     },
@@ -142,8 +143,8 @@ export async function getEvents(id: string) {
   return db.deal.findUnique({
     where: { id },
     include: {
-      events: { orderBy: { effectiveDate: "desc" } },
-      activity: { orderBy: { createdAt: "desc" } },
+      events: { orderBy: { effectiveDate: "desc" }, include: { createdBy: true } },
+      activity: { orderBy: { createdAt: "desc" }, include: { actor: true } },
     },
   });
 }

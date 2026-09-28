@@ -12,7 +12,7 @@ export async function updateMemoSection(
   sectionKey: string,
   body: string,
 ) {
-  const { actor, role } = await guard("edit", "memo");
+  const { actorId, role } = await guard("edit", "memo");
   const memo = await db.creditMemo.findUnique({ where: { dealId } });
   if (!memo) throw new Error("Memo not found");
   const sections = JSON.parse(memo.sections) as Section[];
@@ -24,14 +24,14 @@ export async function updateMemoSection(
     data: { sections: JSON.stringify(next) },
   });
   const title = sections.find((s) => s.key === sectionKey)?.title ?? sectionKey;
-  await logActivity(dealId, actor, role, "edited the IC memo", title);
+  await logActivity(dealId, actorId, role, "edited the IC memo", title);
   revalidatePath(`/deals/${dealId}/memo`);
 }
 
 export async function setMemoStatus(dealId: string, status: string) {
-  const { actor, role } = await guard("approve", "memo");
+  const { actorId, role } = await guard("approve", "memo");
   await db.creditMemo.update({ where: { dealId }, data: { status } });
-  await logActivity(dealId, actor, role, `set the memo status to "${status}"`, "IC Memo");
+  await logActivity(dealId, actorId, role, `set the memo status to "${status}"`, "IC Memo");
   revalidatePath(`/deals/${dealId}/memo`);
   revalidatePath(`/deals/${dealId}`);
 }
@@ -41,10 +41,10 @@ export async function castVote(
   vote: string,
   comment: string,
 ) {
-  const { actor, role } = await guard("vote", "vote");
+  const { actorId, role } = await guard("vote", "vote");
   // One vote per voter — upsert by (deal, voter).
   const existing = await db.iCVote.findFirst({
-    where: { dealId, voter: actor },
+    where: { dealId, voterId: actorId },
   });
   if (existing) {
     await db.iCVote.update({
@@ -53,10 +53,10 @@ export async function castVote(
     });
   } else {
     await db.iCVote.create({
-      data: { dealId, voter: actor, vote, comment },
+      data: { dealId, voterId: actorId, vote, comment },
     });
   }
-  await logActivity(dealId, actor, role, `voted ${vote}`, "IC Vote");
+  await logActivity(dealId, actorId, role, `voted ${vote}`, "IC Vote");
   revalidatePath(`/deals/${dealId}/memo`);
   revalidatePath(`/deals/${dealId}`);
 }

@@ -45,7 +45,7 @@ export interface DefinitionInput {
 }
 
 export async function upsertCovenantDefinition(dealId: string, input: DefinitionInput) {
-  const { actor, role } = await guard("edit", "covenant");
+  const { actorId, role } = await guard("edit", "covenant");
 
   // Validate the formula before persisting (the security + correctness gate).
   const check = validateFormula(input.formula);
@@ -71,11 +71,11 @@ export async function upsertCovenantDefinition(dealId: string, input: Definition
   let id = input.id;
   if (id) {
     await db.covenantDefinition.update({ where: { id }, data });
-    await logActivity(dealId, actor, role, "edited a covenant definition", input.name);
+    await logActivity(dealId, actorId, role, "edited a covenant definition", input.name);
   } else {
     const created = await db.covenantDefinition.create({ data });
     id = created.id;
-    await logActivity(dealId, actor, role, "added a covenant definition", input.name);
+    await logActivity(dealId, actorId, role, "added a covenant definition", input.name);
   }
 
   await runReconciliationInternal(dealId, id);
@@ -84,17 +84,17 @@ export async function upsertCovenantDefinition(dealId: string, input: Definition
 }
 
 export async function deleteCovenantDefinition(dealId: string, definitionId: string) {
-  const { actor, role } = await guard("edit", "covenant");
+  const { actorId, role } = await guard("edit", "covenant");
   const def = await db.covenantDefinition.findUnique({ where: { id: definitionId } });
   await db.covenantDefinition.delete({ where: { id: definitionId } });
-  await logActivity(dealId, actor, role, "removed a covenant definition", def?.name);
+  await logActivity(dealId, actorId, role, "removed a covenant definition", def?.name);
   bust(dealId);
 }
 
 /** Pull fundamentals from Bloomberg (anchored to reported financials) and
  *  persist them as FundamentalFacts for every actual period. */
 export async function recordFundamentals(dealId: string, borrowerId: string) {
-  const { actor, role } = await guard("edit", "covenant");
+  const { actorId, role } = await guard("edit", "covenant");
   const fins = await db.financialStatement.findMany({
     where: { borrowerId, isActual: true },
     orderBy: { periodEnd: "asc" },
@@ -127,7 +127,7 @@ export async function recordFundamentals(dealId: string, borrowerId: string) {
       count++;
     }
   }
-  await logActivity(dealId, actor, role, `refreshed ${count} Bloomberg fundamental fields`, "FA");
+  await logActivity(dealId, actorId, role, `refreshed ${count} Bloomberg fundamental fields`, "FA");
   bust(dealId);
 }
 
@@ -139,7 +139,7 @@ export async function overrideFundamental(
   value: number,
   note: string,
 ) {
-  const { actor, role } = await guard("edit", "covenant");
+  const { actorId, role } = await guard("edit", "covenant");
   const pe = new Date(periodEnd);
   const existing = await db.fundamentalFact.findFirst({
     where: { borrowerId, periodEnd: pe, fieldCode, isOverride: true },
@@ -151,7 +151,7 @@ export async function overrideFundamental(
       data: { borrowerId, periodEnd: pe, fieldCode, value, source: "Override", isOverride: true, note },
     });
   }
-  await logActivity(dealId, actor, role, `overrode ${fieldCode}`, note);
+  await logActivity(dealId, actorId, role, `overrode ${fieldCode}`, note);
   bust(dealId);
 }
 
@@ -205,16 +205,16 @@ async function runReconciliationInternal(dealId: string, onlyDefId?: string) {
 }
 
 export async function runReconciliation(dealId: string) {
-  const { actor, role } = await guard("edit", "covenant");
+  const { actorId, role } = await guard("edit", "covenant");
   await runReconciliationInternal(dealId);
-  await logActivity(dealId, actor, role, "ran covenant reconciliation", "all covenants");
+  await logActivity(dealId, actorId, role, "ran covenant reconciliation", "all covenants");
   bust(dealId);
 }
 
 export async function waiveDefTest(dealId: string, testId: string) {
-  const { actor, role } = await guard("edit", "covenant");
+  const { actorId, role } = await guard("edit", "covenant");
   await db.covenantDefTest.update({ where: { id: testId }, data: { status: "Waived" } });
-  await logActivity(dealId, actor, role, "waived a covenant test");
+  await logActivity(dealId, actorId, role, "waived a covenant test");
   bust(dealId);
 }
 
@@ -224,7 +224,7 @@ export async function upsertEbitdaAdjustment(
   periodEnd: string,
   input: { id?: string; label: string; amount: number; category: string; capped: boolean; aggressiveFlag: boolean; uncapped: boolean },
 ) {
-  const { actor, role } = await guard("edit", "covenant");
+  const { actorId, role } = await guard("edit", "covenant");
   if (input.id) {
     await db.ebitdaAdjustment.update({ where: { id: input.id }, data: { ...input } });
   } else {
@@ -232,12 +232,12 @@ export async function upsertEbitdaAdjustment(
       data: { borrowerId, periodEnd: new Date(periodEnd), order: 99, ...input },
     });
   }
-  await logActivity(dealId, actor, role, "updated the EBITDA add-back bridge", input.label);
+  await logActivity(dealId, actorId, role, "updated the EBITDA add-back bridge", input.label);
   bust(dealId);
 }
 
 export async function logReportingDelivery(dealId: string, deliveryId: string, delivered: boolean) {
-  const { actor, role } = await guard("edit", "covenant");
+  const { actorId, role } = await guard("edit", "covenant");
   const delivery = await db.reportingDelivery.findUnique({ where: { id: deliveryId } });
   if (!delivery) throw new Error("Delivery not found");
   const now = new Date();
@@ -246,7 +246,7 @@ export async function logReportingDelivery(dealId: string, deliveryId: string, d
     where: { id: deliveryId },
     data: { deliveredDate: delivered ? now : null, status },
   });
-  await logActivity(dealId, actor, role, `marked a filing ${status.toLowerCase()}`);
+  await logActivity(dealId, actorId, role, `marked a filing ${status.toLowerCase()}`);
   bust(dealId);
 }
 

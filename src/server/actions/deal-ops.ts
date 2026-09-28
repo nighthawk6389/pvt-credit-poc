@@ -9,7 +9,7 @@ export async function logEvent(
   dealId: string,
   data: { type: string; title: string; detail: string; amount?: number | null },
 ) {
-  const { actor, role } = await guard("log_event", "event");
+  const { actorId, role } = await guard("log_event", "event");
   await db.lifecycleEvent.create({
     data: {
       dealId,
@@ -19,18 +19,18 @@ export async function logEvent(
       amount: data.amount ?? null,
       status: "Completed",
       effectiveDate: new Date(),
-      createdBy: actor,
+      createdById: actorId,
     },
   });
-  await logActivity(dealId, actor, role, `logged a ${data.type.toLowerCase()} event`, data.title);
+  await logActivity(dealId, actorId, role, `logged a ${data.type.toLowerCase()} event`, data.title);
   revalidatePath(`/deals/${dealId}/events`);
   revalidatePath(`/deals/${dealId}`);
 }
 
 export async function toggleTask(dealId: string, taskId: string, status: string) {
-  const { actor, role } = await guard("edit", "task");
+  const { actorId, role } = await guard("edit", "task");
   await db.task.update({ where: { id: taskId }, data: { status } });
-  await logActivity(dealId, actor, role, `moved a task to "${status}"`);
+  await logActivity(dealId, actorId, role, `moved a task to "${status}"`);
   revalidatePath(`/deals/${dealId}`);
 }
 
@@ -39,7 +39,7 @@ export async function addValuation(
   borrowerId: string,
   data: { method: string; fairValuePct: number; discountRate: number; note: string },
 ) {
-  const { actor, role } = await guard("edit", "valuation");
+  const { actorId, role } = await guard("edit", "valuation");
   const fac = await db.facility.findFirst({ where: { dealId }, orderBy: { order: "asc" } });
   const cost = (await db.deal.findUnique({ where: { id: dealId } }))?.dealSize ?? 100;
   await db.valuation.create({
@@ -56,14 +56,14 @@ export async function addValuation(
     },
   });
   void fac;
-  await logActivity(dealId, actor, role, `recorded a ${data.method} valuation mark`, `${data.fairValuePct}% of par`);
+  await logActivity(dealId, actorId, role, `recorded a ${data.method} valuation mark`, `${data.fairValuePct}% of par`);
   revalidatePath(`/deals/${dealId}/valuation`);
 }
 
 export async function waiveCovenantTest(dealId: string, testId: string) {
-  const { actor, role } = await guard("edit", "covenant");
+  const { actorId, role } = await guard("edit", "covenant");
   await db.covenantTest.update({ where: { id: testId }, data: { status: "Waived" } });
-  await logActivity(dealId, actor, role, "waived a covenant test");
+  await logActivity(dealId, actorId, role, "waived a covenant test");
   revalidatePath(`/deals/${dealId}/covenants`);
   revalidatePath(`/deals/${dealId}`);
 }

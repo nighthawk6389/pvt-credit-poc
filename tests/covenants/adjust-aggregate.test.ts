@@ -5,6 +5,7 @@ import {
   assembleLtm,
   assembleLtmSeries,
   fieldAggregation,
+  type QuarterFacts,
   evaluate,
   type AddbackItem,
 } from "@/lib/covenants/index";
@@ -111,8 +112,8 @@ describe("period-basis LTM assembly (flow vs stock)", () => {
   });
 
   it("assembled LTM facts feed the evaluator to a sane leverage", () => {
-    const quarters = [
-      { periodEnd: "2025-03-31T00:00:00.000Z", facts: { EBITDA_ADJ_Q: 0 } }, // ignored
+    const quarters: QuarterFacts[] = [
+      { periodEnd: "2025-03-31T00:00:00.000Z", facts: {} }, // no facts for this quarter
       { periodEnd: "2025-06-30T00:00:00.000Z", facts: { EBITDA: 10, TOT_DEBT: 200, CASH: 12 } },
       { periodEnd: "2025-09-30T00:00:00.000Z", facts: { EBITDA: 10.5, TOT_DEBT: 205, CASH: 14 } },
       { periodEnd: "2025-12-31T00:00:00.000Z", facts: { EBITDA: 11, TOT_DEBT: 198, CASH: 16 } },

@@ -65,7 +65,7 @@ export default async function DataRoomPage({
                   <div className="truncate text-sm font-medium">{doc.name}</div>
                   <div className="text-muted-foreground text-xs">
                     {doc.kind} · v{doc.version} · {(doc.sizeKb / 1024).toFixed(1)}MB ·{" "}
-                    {doc.uploadedBy} · {fmtDate(doc.uploadedAt)}
+                    {doc.uploadedBy?.name ?? doc.uploadedByExternal} · {fmtDate(doc.uploadedAt)}
                   </div>
                 </div>
                 <Badge variant={privilegeVariant(doc.privilege)} className="text-[10px]">

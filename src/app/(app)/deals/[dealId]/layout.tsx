@@ -77,7 +77,7 @@ export default async function DealLayout({
                   <TooltipTrigger asChild>
                     <Avatar className="ring-background size-7 ring-2">
                       <AvatarFallback className="bg-primary/15 text-primary text-[10px] font-semibold">
-                        {m.name
+                        {m.user.name
                           .split(" ")
                           .map((p) => p[0])
                           .join("")
@@ -86,7 +86,7 @@ export default async function DealLayout({
                     </Avatar>
                   </TooltipTrigger>
                   <TooltipContent>
-                    {m.name} · {m.role}
+                    {m.user.name} · {m.role}
                   </TooltipContent>
                 </Tooltip>
               ))}

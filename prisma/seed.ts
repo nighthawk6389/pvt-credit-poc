@@ -29,6 +29,18 @@ function makeRng(seedStr: string) {
   };
 }
 
+/// Not every actor is one of our users — sponsors, counsel and advisors are
+/// third parties, so their names are kept verbatim rather than fabricated into
+/// user accounts.
+function makeActorRef(users: Record<string, string>) {
+  return (name?: string | null) =>
+    !name
+      ? { id: null, external: null }
+      : users[name]
+        ? { id: users[name], external: null }
+        : { id: null, external: name };
+}
+
 const D = (y: number, m: number, d = 15, h = 0) =>
   new Date(Date.UTC(y, m - 1, d, h));
 const QUARTER_ENDS = [
@@ -70,15 +82,51 @@ async function main() {
   await db.deal.deleteMany();
   await db.borrower.deleteMany();
   await db.sponsor.deleteMany();
+  await db.orgMembership.deleteMany();
+  await db.user.deleteMany();
+  await db.organization.deleteMany();
+
+  console.log("→ Organization, users & memberships");
+  const org = await db.organization.create({
+    data: { name: "Lumen Credit Partners", slug: "lumen" },
+  });
+
+  // The firm's staff. Org role drives permissions (see src/lib/auth/roles.ts);
+  // deal-level seats are granted per deal via DealTeamMember.
+  const staff = [
+    { name: "Jordan Mercer", title: "Managing Director", role: "Deal Lead" },
+    { name: "Avery Patel", title: "Senior Analyst", role: "Analyst" },
+    { name: "Riley Chen", title: "Partner, IC", role: "IC Member" },
+    { name: "Morgan Lee", title: "Partner, IC", role: "IC Member" },
+    { name: "Taylor Brooks", title: "Managing Director, IC", role: "IC Member" },
+    { name: "Casey Nguyen", title: "Partner, IC", role: "IC Member" },
+    { name: "Sam Okafor", title: "Compliance Officer", role: "Compliance" },
+    { name: "Dana Reyes", title: "Investor Relations", role: "Read-only" },
+  ];
+  const users: Record<string, string> = {};
+  for (const m of staff) {
+    const initials = m.name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase();
+    const created = await db.user.create({
+      data: {
+        name: m.name,
+        title: m.title,
+        initials,
+        email: m.name.toLowerCase().replace(/[^a-z0-9]+/g, ".") + "@lumencredit.example",
+        memberships: { create: { orgId: org.id, role: m.role } },
+      },
+    });
+    users[m.name] = created.id;
+  }
+
 
   console.log("→ Sponsors");
   const sponsorData = [
-    { name: "Brightwater Capital", type: "PE", aum: 14200, hqCity: "New York, NY", relationshipOwner: "Jordan Mercer", vintage: 2008 },
-    { name: "Crestline Partners", type: "PE", aum: 8600, hqCity: "Chicago, IL", relationshipOwner: "Avery Patel", vintage: 2011 },
-    { name: "Summit Ridge Equity", type: "PE", aum: 5400, hqCity: "Boston, MA", relationshipOwner: "Riley Chen", vintage: 2014 },
-    { name: "Halyard Capital", type: "PE", aum: 3100, hqCity: "Dallas, TX", relationshipOwner: "Jordan Mercer", vintage: 2016 },
-    { name: "Tidewater PE", type: "PE", aum: 2200, hqCity: "Atlanta, GA", relationshipOwner: "Avery Patel", vintage: 2017 },
-    { name: "Granite Peak Partners", type: "Family Office", aum: 1800, hqCity: "Denver, CO", relationshipOwner: "Riley Chen", vintage: 2013 },
+    { name: "Brightwater Capital", type: "PE", aum: 14200, hqCity: "New York, NY", relationshipOwnerId: users["Jordan Mercer"], vintage: 2008 },
+    { name: "Crestline Partners", type: "PE", aum: 8600, hqCity: "Chicago, IL", relationshipOwnerId: users["Avery Patel"], vintage: 2011 },
+    { name: "Summit Ridge Equity", type: "PE", aum: 5400, hqCity: "Boston, MA", relationshipOwnerId: users["Riley Chen"], vintage: 2014 },
+    { name: "Halyard Capital", type: "PE", aum: 3100, hqCity: "Dallas, TX", relationshipOwnerId: users["Jordan Mercer"], vintage: 2016 },
+    { name: "Tidewater PE", type: "PE", aum: 2200, hqCity: "Atlanta, GA", relationshipOwnerId: users["Avery Patel"], vintage: 2017 },
+    { name: "Granite Peak Partners", type: "Family Office", aum: 1800, hqCity: "Denver, CO", relationshipOwnerId: users["Riley Chen"], vintage: 2013 },
   ];
   const sponsors: Record<string, string> = {};
   for (const s of sponsorData) {
@@ -164,7 +212,7 @@ async function main() {
         dealSize: row.size,
         useOfProceeds: "LBO / refinancing & growth capital",
         targetClose: D(2025, 1 + Math.floor(rng() * 11)),
-        leadName: sponsorData.find((s) => s.name === row.sponsor)?.relationshipOwner,
+        leadId: sponsorData.find((s) => s.name === row.sponsor)?.relationshipOwnerId,
         probability: row.stage === "Closed" ? 100 : 40 + Math.floor(rng() * 40),
         isPrivileged: row.stage !== "Closed",
         thesis: `${row.desc} ${row.facType} supporting a sponsor-led platform in ${row.sector.toLowerCase()}.`,
@@ -277,13 +325,13 @@ async function main() {
           amount: null,
           status: "Executed",
           effectiveDate: D(2026, 2, 10),
-          createdBy: "Jordan Mercer",
+          createdById: users["Jordan Mercer"],
         },
       });
     }
   }
 
-  await seedFlagship(sponsors);
+  await seedFlagship(sponsors, users);
 
   const counts = {
     sponsors: await db.sponsor.count(),
@@ -296,7 +344,11 @@ async function main() {
 }
 
 // ── Flagship deal: Project Atlas / Meridian Health Partners ──────────────
-async function seedFlagship(sponsors: Record<string, string>) {
+async function seedFlagship(
+  sponsors: Record<string, string>,
+  users: Record<string, string>,
+) {
+  const actorRef = makeActorRef(users);
   console.log("→ Flagship: Project Atlas (Meridian Health Partners)");
   const borrower = await db.borrower.create({
     data: {
@@ -381,7 +433,7 @@ async function seedFlagship(sponsors: Record<string, string>) {
       useOfProceeds:
         "Finance Brightwater's acquisition of Meridian Health Partners; refinance existing debt and fund a $25MM delayed-draw acquisition line.",
       targetClose: D(2026, 7, 31),
-      leadName: "Jordan Mercer",
+      leadId: users["Jordan Mercer"],
       probability: 75,
       isPrivileged: true,
       thesis:
@@ -401,10 +453,10 @@ async function seedFlagship(sponsors: Record<string, string>) {
   // Team (wall-crossed deal team).
   await db.dealTeamMember.createMany({
     data: [
-      { dealId: deal.id, name: "Jordan Mercer", title: "Managing Director", role: "Deal Lead", wallCrossed: true, crossedAt: D(2026, 4, 2) },
-      { dealId: deal.id, name: "Avery Patel", title: "Senior Analyst", role: "Analyst", wallCrossed: true, crossedAt: D(2026, 4, 2) },
-      { dealId: deal.id, name: "Riley Chen", title: "Partner, IC", role: "IC Member", wallCrossed: true, crossedAt: D(2026, 4, 5) },
-      { dealId: deal.id, name: "Sam Okafor", title: "Compliance Officer", role: "Compliance", wallCrossed: true, crossedAt: D(2026, 4, 1) },
+      { dealId: deal.id, userId: users["Jordan Mercer"], role: "Deal Lead", wallCrossed: true, crossedAt: D(2026, 4, 2) },
+      { dealId: deal.id, userId: users["Avery Patel"], role: "Analyst", wallCrossed: true, crossedAt: D(2026, 4, 2) },
+      { dealId: deal.id, userId: users["Riley Chen"], role: "IC Member", wallCrossed: true, crossedAt: D(2026, 4, 5) },
+      { dealId: deal.id, userId: users["Sam Okafor"], role: "Compliance", wallCrossed: true, crossedAt: D(2026, 4, 1) },
     ],
   });
 
@@ -450,7 +502,8 @@ async function seedFlagship(sponsors: Record<string, string>) {
         sizeKb: d.sizeKb,
         privilege: d.privilege,
         bodyText: d.body,
-        uploadedBy: d.by,
+        uploadedById: actorRef(d.by).id,
+        uploadedByExternal: actorRef(d.by).external,
         uploadedAt: D(2026, 4, 10 + Math.floor(Math.random() * 10)),
       },
     });
@@ -491,7 +544,8 @@ async function seedFlagship(sponsors: Record<string, string>) {
       question: d.q,
       status: d.status,
       answer: d.answer ?? null,
-      assignee: d.who,
+      assigneeId: actorRef(d.who).id,
+      assigneeExternal: actorRef(d.who).external,
       order: i,
     })),
   });
@@ -839,55 +893,55 @@ async function seedFlagship(sponsors: Record<string, string>) {
   // Lifecycle events.
   await db.lifecycleEvent.createMany({
     data: [
-      { dealId: deal.id, type: "Notice", title: "Wall-cross & NDA executed", detail: "Deal team wall-crossed; NDA executed with Brightwater Capital.", status: "Completed", effectiveDate: D(2026, 4, 2), createdBy: "Sam Okafor" },
-      { dealId: deal.id, type: "Notice", title: "Indicative term sheet issued", detail: "Issued indicative terms: $185MM unitranche, S+575, 1.00% floor, 99.0 OID.", status: "Completed", effectiveDate: D(2026, 4, 20), createdBy: "Jordan Mercer" },
-      { dealId: deal.id, type: "Drawdown", title: "Projected DDTL draw — Acq. #1", detail: "Anticipated $12MM delayed-draw to fund first tuck-in acquisition.", amount: 12, status: "Pending", effectiveDate: D(2026, 9, 30), createdBy: "Avery Patel" },
-      { dealId: deal.id, type: "Waiver", title: "Reporting deadline waiver (illustrative)", detail: "Illustrative 15-day extension granted for Q2 compliance certificate delivery.", status: "Completed", effectiveDate: D(2026, 5, 5), createdBy: "Jordan Mercer" },
-      { dealId: deal.id, type: "RateReset", title: "SOFR reset — Q3 2026", detail: "Quarterly base-rate reset; 1.00% floor not in effect at current SOFR.", status: "Pending", effectiveDate: D(2026, 7, 1), createdBy: "Avery Patel" },
+      { dealId: deal.id, type: "Notice", title: "Wall-cross & NDA executed", detail: "Deal team wall-crossed; NDA executed with Brightwater Capital.", status: "Completed", effectiveDate: D(2026, 4, 2), createdById: users["Sam Okafor"] },
+      { dealId: deal.id, type: "Notice", title: "Indicative term sheet issued", detail: "Issued indicative terms: $185MM unitranche, S+575, 1.00% floor, 99.0 OID.", status: "Completed", effectiveDate: D(2026, 4, 20), createdById: users["Jordan Mercer"] },
+      { dealId: deal.id, type: "Drawdown", title: "Projected DDTL draw — Acq. #1", detail: "Anticipated $12MM delayed-draw to fund first tuck-in acquisition.", amount: 12, status: "Pending", effectiveDate: D(2026, 9, 30), createdById: users["Avery Patel"] },
+      { dealId: deal.id, type: "Waiver", title: "Reporting deadline waiver (illustrative)", detail: "Illustrative 15-day extension granted for Q2 compliance certificate delivery.", status: "Completed", effectiveDate: D(2026, 5, 5), createdById: users["Jordan Mercer"] },
+      { dealId: deal.id, type: "RateReset", title: "SOFR reset — Q3 2026", detail: "Quarterly base-rate reset; 1.00% floor not in effect at current SOFR.", status: "Pending", effectiveDate: D(2026, 7, 1), createdById: users["Avery Patel"] },
     ],
   });
 
   // IC votes (4 approve / 1 conditional).
   await db.iCVote.createMany({
     data: [
-      { dealId: deal.id, voter: "Riley Chen", vote: "Approve", comment: "Strong credit; supportive of terms." },
-      { dealId: deal.id, voter: "Morgan Lee", vote: "Approve", comment: "Comfortable with leverage and documentation." },
-      { dealId: deal.id, voter: "Taylor Brooks", vote: "Approve", comment: "Like the recurring revenue and equity cushion." },
-      { dealId: deal.id, voter: "Casey Nguyen", vote: "Conditional", comment: "Approve subject to tightening change-of-control consent." },
-      { dealId: deal.id, voter: "Jordan Mercer", vote: "Approve", comment: "Recommend approval." },
+      { dealId: deal.id, voterId: users["Riley Chen"], vote: "Approve", comment: "Strong credit; supportive of terms." },
+      { dealId: deal.id, voterId: users["Morgan Lee"], vote: "Approve", comment: "Comfortable with leverage and documentation." },
+      { dealId: deal.id, voterId: users["Taylor Brooks"], vote: "Approve", comment: "Like the recurring revenue and equity cushion." },
+      { dealId: deal.id, voterId: users["Casey Nguyen"], vote: "Conditional", comment: "Approve subject to tightening change-of-control consent." },
+      { dealId: deal.id, voterId: users["Jordan Mercer"], vote: "Approve", comment: "Recommend approval." },
     ],
   });
 
   // Tasks.
   await db.task.createMany({
     data: [
-      { dealId: deal.id, title: "Finalize covenant package negotiation", status: "Doing", priority: "High", assignee: "Jordan Mercer", dueDate: D(2026, 6, 18) },
-      { dealId: deal.id, title: "Resolve change-of-control consent flag", status: "Todo", priority: "High", assignee: "Wexler & Crane", dueDate: D(2026, 6, 20) },
-      { dealId: deal.id, title: "Complete management bench assessment", status: "Doing", priority: "Medium", assignee: "Jordan Mercer", dueDate: D(2026, 6, 22) },
-      { dealId: deal.id, title: "Circulate final IC memo", status: "Todo", priority: "High", assignee: "Avery Patel", dueDate: D(2026, 6, 25) },
-      { dealId: deal.id, title: "Confirm HIPAA / data-privacy diligence", status: "Doing", priority: "Medium", assignee: "Sam Okafor", dueDate: D(2026, 6, 19) },
-      { dealId: deal.id, title: "Lock sources & uses with sponsor", status: "Done", priority: "Medium", assignee: "Avery Patel", dueDate: D(2026, 6, 10) },
+      { dealId: deal.id, title: "Finalize covenant package negotiation", status: "Doing", priority: "High", assigneeId: actorRef("Jordan Mercer").id, assigneeExternal: actorRef("Jordan Mercer").external, dueDate: D(2026, 6, 18) },
+      { dealId: deal.id, title: "Resolve change-of-control consent flag", status: "Todo", priority: "High", assigneeId: actorRef("Wexler & Crane").id, assigneeExternal: actorRef("Wexler & Crane").external, dueDate: D(2026, 6, 20) },
+      { dealId: deal.id, title: "Complete management bench assessment", status: "Doing", priority: "Medium", assigneeId: actorRef("Jordan Mercer").id, assigneeExternal: actorRef("Jordan Mercer").external, dueDate: D(2026, 6, 22) },
+      { dealId: deal.id, title: "Circulate final IC memo", status: "Todo", priority: "High", assigneeId: actorRef("Avery Patel").id, assigneeExternal: actorRef("Avery Patel").external, dueDate: D(2026, 6, 25) },
+      { dealId: deal.id, title: "Confirm HIPAA / data-privacy diligence", status: "Doing", priority: "Medium", assigneeId: actorRef("Sam Okafor").id, assigneeExternal: actorRef("Sam Okafor").external, dueDate: D(2026, 6, 19) },
+      { dealId: deal.id, title: "Lock sources & uses with sponsor", status: "Done", priority: "Medium", assigneeId: actorRef("Avery Patel").id, assigneeExternal: actorRef("Avery Patel").external, dueDate: D(2026, 6, 10) },
     ],
   });
 
   // Notes (mgmt call + internal).
   await db.note.createMany({
     data: [
-      { dealId: deal.id, kind: "MgmtCall", title: "Management call — May 14", author: "Avery Patel", body: "CEO confirmed acquisition pipeline; CFO walked through working-capital seasonality and maintenance capex. No material adverse items disclosed. Comfortable with management depth pending bench review.", createdAt: D(2026, 5, 14) },
-      { dealId: deal.id, kind: "SiteVisit", title: "Site visit — Columbus flagship clinic", author: "Jordan Mercer", body: "Visited the flagship Columbus clinic and two satellites. Strong patient throughput, clean facilities, engaged staff. Operational systems well-integrated post-acquisition.", createdAt: D(2026, 5, 8) },
-      { dealId: deal.id, kind: "Internal", title: "Pricing discussion", author: "Jordan Mercer", body: "Held at S+575 / 99.0 OID after comps review (DLEN shows healthcare services unitranche clearing S+550–600). Floor at 1.00%. Upfront 2.50%.", createdAt: D(2026, 4, 18) },
+      { dealId: deal.id, kind: "MgmtCall", title: "Management call — May 14", authorId: users["Avery Patel"], body: "CEO confirmed acquisition pipeline; CFO walked through working-capital seasonality and maintenance capex. No material adverse items disclosed. Comfortable with management depth pending bench review.", createdAt: D(2026, 5, 14) },
+      { dealId: deal.id, kind: "SiteVisit", title: "Site visit — Columbus flagship clinic", authorId: users["Jordan Mercer"], body: "Visited the flagship Columbus clinic and two satellites. Strong patient throughput, clean facilities, engaged staff. Operational systems well-integrated post-acquisition.", createdAt: D(2026, 5, 8) },
+      { dealId: deal.id, kind: "Internal", title: "Pricing discussion", authorId: users["Jordan Mercer"], body: "Held at S+575 / 99.0 OID after comps review (DLEN shows healthcare services unitranche clearing S+550–600). Floor at 1.00%. Upfront 2.50%.", createdAt: D(2026, 4, 18) },
     ],
   });
 
   // Activity log.
   await db.activityLog.createMany({
     data: [
-      { dealId: deal.id, actor: "Sam Okafor", role: "Compliance", action: "wall-crossed the deal team", target: "Project Atlas", createdAt: D(2026, 4, 2, 9) },
-      { dealId: deal.id, actor: "Jordan Mercer", role: "Deal Lead", action: "created the deal", target: "Project Atlas", createdAt: D(2026, 4, 2, 10) },
-      { dealId: deal.id, actor: "Avery Patel", role: "Analyst", action: "uploaded 11 documents to the data room", target: "Data Room", createdAt: D(2026, 4, 10, 14) },
-      { dealId: deal.id, actor: "Jordan Mercer", role: "Deal Lead", action: "issued an indicative term sheet", target: "Structuring", createdAt: D(2026, 4, 20, 11) },
-      { dealId: deal.id, actor: "Avery Patel", role: "Analyst", action: "drafted the credit memo", target: "IC Memo", createdAt: D(2026, 5, 2, 16) },
-      { dealId: deal.id, actor: "Riley Chen", role: "IC Member", action: "voted Approve", target: "IC Vote", createdAt: D(2026, 5, 30, 15) },
+      { dealId: deal.id, actorId: users["Sam Okafor"], role: "Compliance", action: "wall-crossed the deal team", target: "Project Atlas", createdAt: D(2026, 4, 2, 9) },
+      { dealId: deal.id, actorId: users["Jordan Mercer"], role: "Deal Lead", action: "created the deal", target: "Project Atlas", createdAt: D(2026, 4, 2, 10) },
+      { dealId: deal.id, actorId: users["Avery Patel"], role: "Analyst", action: "uploaded 11 documents to the data room", target: "Data Room", createdAt: D(2026, 4, 10, 14) },
+      { dealId: deal.id, actorId: users["Jordan Mercer"], role: "Deal Lead", action: "issued an indicative term sheet", target: "Structuring", createdAt: D(2026, 4, 20, 11) },
+      { dealId: deal.id, actorId: users["Avery Patel"], role: "Analyst", action: "drafted the credit memo", target: "IC Memo", createdAt: D(2026, 5, 2, 16) },
+      { dealId: deal.id, actorId: users["Riley Chen"], role: "IC Member", action: "voted Approve", target: "IC Vote", createdAt: D(2026, 5, 30, 15) },
     ],
   });
 }

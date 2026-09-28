@@ -185,7 +185,7 @@ export default async function DealOverviewPage({
                   <div className="min-w-0 flex-1">
                     <div className="leading-snug">{t.title}</div>
                     <div className="text-muted-foreground text-xs">
-                      {t.assignee} · due {fmtDate(t.dueDate)}
+                      {t.assignee?.name ?? t.assigneeExternal} · due {fmtDate(t.dueDate)}
                     </div>
                   </div>
                   <Badge variant={priorityVariant(t.priority)} className="text-[9px]">
