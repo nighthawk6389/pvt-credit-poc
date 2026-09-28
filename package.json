@@ -15,7 +15,9 @@
     "setup": "npm install && prisma generate && prisma migrate deploy && npm run db:seed",
     "postinstall": "prisma generate",
     "db:migrate": "prisma migrate dev",
-    "db:deploy": "prisma migrate deploy"
+    "db:deploy": "prisma migrate deploy",
+    "docs:xsd": "node docs/data-model/generate-xsd.mjs",
+    "docs:explorer": "node docs/data-model/generate-explorer.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

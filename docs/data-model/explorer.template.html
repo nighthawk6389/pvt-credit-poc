@@ -1,0 +1,870 @@
+<title>Deal Room Model Explorer</title>
+<meta name="description" content="Click through the 68 entities and 121 foreign keys of the private credit deal room data model.">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Spectral:wght@400;500;600&display=swap">
+<style>
+  /* ── tokens: light is the base, both dark states redefine only colours ── */
+  :root {
+    --ground: #f3f6f8;
+    --surface: #ffffff;
+    --surface-2: #eaeff4;
+    --surface-3: #dfe6ed;
+    --ink: #131b23;
+    --ink-2: #566472;
+    --ink-3: #82909e;
+    --line: #d5dde5;
+    --line-soft: #e4eaf0;
+    --accent: #12656d;
+    --accent-ink: #0c4b52;
+    --accent-wash: #ddedef;
+    --shadow: 0 1px 2px rgba(19, 27, 35, .05), 0 8px 24px -12px rgba(19, 27, 35, .16);
+
+    --dom-1: #5a63c8;
+    --dom-2: #157f86;
+    --dom-3: #b4671f;
+    --dom-4: #4c8340;
+    --dom-5: #9c4f86;
+    --dom-6: #ad3a3a;
+    --dom-7: #2b6cae;
+    --dom-8: #86701c;
+    --dom-9: #64748b;
+
+    --serif: "Spectral", Georgia, "Times New Roman", serif;
+    --sans: "Archivo", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --ground: #0f141a;
+      --surface: #161d25;
+      --surface-2: #1c252e;
+      --surface-3: #25303b;
+      --ink: #e3eaf1;
+      --ink-2: #9aa8b6;
+      --ink-3: #6c7c8b;
+      --line: #27323d;
+      --line-soft: #1e2831;
+      --accent: #55b9c0;
+      --accent-ink: #7fd0d6;
+      --accent-wash: #14313a;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 10px 28px -14px rgba(0, 0, 0, .7);
+
+      --dom-1: #9aa1ee;
+      --dom-2: #5cc0c7;
+      --dom-3: #e0a05e;
+      --dom-4: #8cc47e;
+      --dom-5: #d68cbf;
+      --dom-6: #e88585;
+      --dom-7: #7fb2e8;
+      --dom-8: #ccb45c;
+      --dom-9: #9fadbd;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --ground: #0f141a;
+    --surface: #161d25;
+    --surface-2: #1c252e;
+    --surface-3: #25303b;
+    --ink: #e3eaf1;
+    --ink-2: #9aa8b6;
+    --ink-3: #6c7c8b;
+    --line: #27323d;
+    --line-soft: #1e2831;
+    --accent: #55b9c0;
+    --accent-ink: #7fd0d6;
+    --accent-wash: #14313a;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 10px 28px -14px rgba(0, 0, 0, .7);
+
+    --dom-1: #9aa1ee;
+    --dom-2: #5cc0c7;
+    --dom-3: #e0a05e;
+    --dom-4: #8cc47e;
+    --dom-5: #d68cbf;
+    --dom-6: #e88585;
+    --dom-7: #7fb2e8;
+    --dom-8: #ccb45c;
+    --dom-9: #9fadbd;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+  .app { display: flex; flex-direction: column; height: 100%; }
+
+  /* ── top bar ───────────────────────────────────────────────────────── */
+  .topbar {
+    position: sticky;
+    top: env(safe-area-inset-top, 0px);
+    z-index: 30;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 18px;
+    padding: 12px 20px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
+  }
+  .brand { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+  .brand h1 {
+    margin: 0;
+    font-family: var(--serif);
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: -.01em;
+    white-space: nowrap;
+  }
+  .brand .src {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-3);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .stats { display: flex; gap: 14px; font-size: 11.5px; color: var(--ink-2); }
+  .stats b { font-variant-numeric: tabular-nums; color: var(--ink); font-weight: 600; }
+  .spacer { flex: 1 1 40px; }
+  .search {
+    position: relative;
+    flex: 0 1 260px;
+    min-width: 170px;
+  }
+  .search input {
+    width: 100%;
+    padding: 7px 10px 7px 30px;
+    font: 400 13px/1.4 var(--sans);
+    color: var(--ink);
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+  }
+  .search input::placeholder { color: var(--ink-3); }
+  .search svg { position: absolute; left: 9px; top: 8px; width: 14px; height: 14px; color: var(--ink-3); }
+  .search kbd {
+    position: absolute; right: 8px; top: 7px;
+    font-family: var(--mono); font-size: 10px; color: var(--ink-3);
+    background: var(--surface-3); border-radius: 4px; padding: 1px 5px;
+  }
+  .railtoggle { display: none; }
+
+  /* ── two-pane body ─────────────────────────────────────────────────── */
+  .panes {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 286px) minmax(0, 1fr);
+  }
+  .rail {
+    min-height: 0;
+    overflow-y: auto;
+    padding: 12px 10px 40px;
+    background: var(--surface);
+    border-right: 1px solid var(--line);
+  }
+  .main { min-height: 0; overflow-y: auto; padding: 22px 24px 64px; }
+  .sheet { max-width: 900px; margin: 0 auto; }
+
+  /* ── rail: one collapsible group per domain ────────────────────────── */
+  .group { margin-bottom: 2px; }
+  .grouphead {
+    display: flex; align-items: center; gap: 8px; width: 100%;
+    padding: 7px 8px; border: 0; background: none; cursor: pointer;
+    text-align: left; border-radius: 6px;
+  }
+  .grouphead:hover { background: var(--surface-2); }
+  .grouphead .chev { width: 12px; height: 12px; color: var(--ink-3); flex: none; transition: transform .15s ease; }
+  .group[data-open="true"] .grouphead .chev { transform: rotate(90deg); }
+  .grouphead .dot { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+  .grouphead .label {
+    flex: 1; min-width: 0;
+    font-size: 10.5px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase;
+    color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .grouphead .n { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .grouplist { display: flex; flex-direction: column; gap: 1px; padding: 2px 0 8px 12px; }
+  .group[data-open="false"] .grouplist { display: none; }
+
+  .item {
+    display: flex; align-items: center; gap: 8px; width: 100%;
+    padding: 5px 8px 5px 10px; border: 0; border-left: 2px solid transparent;
+    background: none; cursor: pointer; text-align: left; border-radius: 0 6px 6px 0;
+  }
+  .item:hover { background: var(--surface-2); }
+  .item[aria-current="true"] { background: var(--accent-wash); border-left-color: var(--accent); }
+  .item .nm { font-family: var(--mono); font-size: 12.5px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .item[aria-current="true"] .nm { font-weight: 500; }
+  .item .deg { font-family: var(--mono); font-size: 10px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .item .hit { font-size: 10.5px; color: var(--accent); font-family: var(--mono); }
+  .empty { padding: 14px 10px; color: var(--ink-3); font-size: 12.5px; }
+
+  /* ── trail ─────────────────────────────────────────────────────────── */
+  .trail { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; margin-bottom: 16px; font-size: 12px; }
+  .trail .back {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 9px 3px 6px; margin-right: 6px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 6px; cursor: pointer;
+  }
+  .trail .back:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  .trail .back:disabled { opacity: .4; cursor: default; }
+  .trail .back svg { width: 12px; height: 12px; }
+  .crumb {
+    padding: 2px 7px; border: 0; background: none; cursor: pointer;
+    font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); border-radius: 5px;
+  }
+  .crumb:hover { background: var(--surface-2); color: var(--ink); }
+  .crumb[aria-current="true"] { color: var(--ink); font-weight: 500; }
+  .sep { color: var(--ink-3); }
+
+  /* ── entity header ─────────────────────────────────────────────────── */
+  .ehead { padding-bottom: 16px; border-bottom: 1px solid var(--line); margin-bottom: 20px; }
+  .eyebrow { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .eyebrow .rail3 { width: 3px; height: 13px; border-radius: 2px; }
+  .eyebrow .dom { font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+  .eyebrow .sub { font-size: 11px; color: var(--ink-3); }
+  .ehead h2 {
+    margin: 0 0 6px;
+    font-family: var(--mono); font-size: 25px; font-weight: 500; letter-spacing: -.02em;
+    text-wrap: balance;
+  }
+  .ehead .doc { margin: 0; max-width: 62ch; color: var(--ink-2); font-size: 13.5px; }
+  .badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 2px 8px; border-radius: 20px;
+    font-size: 11px; color: var(--ink-2);
+    background: var(--surface-2); border: 1px solid var(--line-soft);
+  }
+  .badge b { font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .badge.t { border-color: var(--accent); color: var(--accent); background: var(--accent-wash); }
+
+  /* ── section scaffolding ───────────────────────────────────────────── */
+  section { margin-bottom: 26px; }
+  .shead { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+  .shead h3 {
+    margin: 0; font-family: var(--serif); font-size: 15px; font-weight: 600; letter-spacing: -.005em;
+  }
+  .shead .count { font-family: var(--mono); font-size: 11px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .shead .hint { margin-left: auto; font-size: 11.5px; color: var(--ink-3); }
+
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+
+  /* ── neighbourhood diagram ─────────────────────────────────────────── */
+  .diagram { overflow-x: auto; padding: 4px; }
+  .diagram svg { display: block; min-width: 660px; width: 100%; height: auto; }
+  .diagram .node { cursor: pointer; }
+  .diagram .node rect { transition: fill .12s ease; }
+  .diagram .node:hover rect { fill: var(--surface-3); }
+  .diagram text { font-family: var(--mono); font-size: 11.5px; fill: var(--ink); }
+  .diagram .cap { font-family: var(--sans); font-size: 10px; letter-spacing: .07em; text-transform: uppercase; fill: var(--ink-3); }
+  .diagram .mult { font-family: var(--mono); font-size: 10px; fill: var(--ink-3); }
+  .diagram .edge { fill: none; stroke: var(--line); stroke-width: 1.25; }
+  .diagram .more { font-family: var(--sans); font-size: 10.5px; fill: var(--ink-3); }
+
+  /* ── relationship rows ─────────────────────────────────────────────── */
+  .rows { display: flex; flex-direction: column; }
+  .rows > * + * { border-top: 1px solid var(--line-soft); }
+  .row { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: center; padding: 9px 12px; }
+  .row .lhs { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; min-width: 0; }
+  .pair { display: inline-flex; align-items: baseline; }
+  .jump {
+    padding: 1px 6px; margin: -1px -2px; border: 0; background: none; cursor: pointer;
+    font-family: var(--mono); font-size: 13px; font-weight: 500; color: var(--accent);
+    border-radius: 5px; text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--accent) 35%, transparent);
+    text-underline-offset: 2px;
+  }
+  .jump:hover { background: var(--accent-wash); text-decoration-color: var(--accent); }
+  .col { font-family: var(--mono); font-size: 12px; color: var(--ink-2); }
+  .arrow { color: var(--ink-3); }
+  .card-tag {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .04em;
+    padding: 1px 6px; border-radius: 4px; background: var(--surface-2); color: var(--ink-2);
+    border: 1px solid var(--line-soft); white-space: nowrap;
+  }
+  .rowmeta { display: flex; align-items: center; gap: 6px; }
+  .disclose {
+    width: 22px; height: 22px; display: grid; place-items: center;
+    border: 1px solid var(--line); background: var(--surface); border-radius: 6px; cursor: pointer; color: var(--ink-3);
+  }
+  .disclose:hover { color: var(--accent); border-color: var(--accent); }
+  .disclose svg { width: 11px; height: 11px; transition: transform .15s ease; }
+  .row[data-open="true"] .disclose svg { transform: rotate(180deg); }
+  .rowdetail {
+    grid-column: 1 / -1;
+    margin-top: 6px; padding: 9px 11px;
+    background: var(--surface-2); border-radius: 7px;
+    font-size: 12.5px; color: var(--ink-2);
+  }
+  .rowdetail dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin: 0; }
+  .rowdetail dt { font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+  .rowdetail dd { margin: 0; font-family: var(--mono); font-size: 12px; color: var(--ink); }
+  .rowdetail p { margin: 8px 0 0; font-family: var(--sans); }
+
+  /* ── fields table ──────────────────────────────────────────────────── */
+  .tablewrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; min-width: 480px; }
+  thead th {
+    text-align: left; padding: 8px 12px;
+    font-size: 10.5px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3);
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+  tbody td { padding: 7px 12px; border-bottom: 1px solid var(--line-soft); vertical-align: baseline; }
+  tbody tr:last-child td { border-bottom: 0; }
+  tbody tr.hasdoc { cursor: pointer; }
+  tbody tr.hasdoc:hover { background: var(--surface-2); }
+  tbody tr.on { background: var(--surface-2); }
+  td.f { font-family: var(--mono); font-size: 12.5px; white-space: nowrap; }
+  td.f .pk { font-family: var(--sans); font-size: 9.5px; letter-spacing: .06em; color: var(--accent); margin-left: 6px; }
+  td.t { font-family: var(--mono); font-size: 12px; color: var(--ink-2); white-space: nowrap; }
+  td.t .en { border: 0; background: none; padding: 0; cursor: pointer; color: var(--dom-5); font: inherit; text-decoration: underline; text-underline-offset: 2px; }
+  td.t .dec { color: var(--dom-3); }
+  td.n { font-size: 12.5px; color: var(--ink-2); }
+  td.n .req { font-size: 10.5px; color: var(--ink-3); }
+  tr.docrow td { padding: 0 12px 9px; font-size: 12.5px; color: var(--ink-2); background: var(--surface-2); }
+  tr.docrow p { margin: 0 0 0 2px; max-width: 70ch; }
+
+  /* ── keys ──────────────────────────────────────────────────────────── */
+  .keys { display: grid; gap: 8px; padding: 12px; }
+  .keyline { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
+  .keyline .kind {
+    font-size: 10px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase;
+    color: var(--ink-3); min-width: 54px;
+  }
+  .keyline code {
+    font-family: var(--mono); font-size: 12px;
+    background: var(--surface-2); border: 1px solid var(--line-soft); border-radius: 5px; padding: 1px 6px;
+  }
+
+  /* ── enum view ─────────────────────────────────────────────────────── */
+  .vals { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px; }
+  .val {
+    font-family: var(--mono); font-size: 12px;
+    padding: 3px 9px; border-radius: 6px;
+    background: var(--surface-2); border: 1px solid var(--line-soft);
+  }
+
+  .foot { margin-top: 28px; padding-top: 14px; border-top: 1px solid var(--line); font-size: 11.5px; color: var(--ink-3); }
+  .foot code { font-family: var(--mono); }
+
+  /* ── narrow ────────────────────────────────────────────────────────── */
+  @media (max-width: 880px) {
+    .topbar { padding: 10px 16px; }
+    .stats { order: 3; width: 100%; }
+    .panes { grid-template-columns: minmax(0, 1fr); }
+    .rail {
+      border-right: 0; border-bottom: 1px solid var(--line);
+      max-height: 44vh; padding-bottom: 12px;
+    }
+    .app[data-rail="closed"] .rail { display: none; }
+    .railtoggle {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 10px; background: var(--surface-2);
+      border: 1px solid var(--line); border-radius: 7px; cursor: pointer; font-size: 12.5px;
+    }
+    .railtoggle svg { width: 12px; height: 12px; }
+    .main { padding: 18px 16px 56px; }
+    .ehead h2 { font-size: 21px; }
+  }
+</style>
+
+<div class="app" id="app" data-rail="open">
+  <header class="topbar">
+    <div class="brand">
+      <h1>Deal Room Model</h1>
+      <span class="src">schema.canonical.prisma</span>
+    </div>
+    <div class="stats" id="stats"></div>
+    <span class="spacer"></span>
+    <button class="railtoggle" id="railtoggle" aria-expanded="true" aria-controls="rail">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>
+      <span id="railtogglelabel">Entities</span>
+    </button>
+    <div class="search">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10.5 10.5 14 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      <input id="q" type="search" placeholder="Search entities and fields" autocomplete="off" spellcheck="false" aria-label="Search entities and fields">
+      <kbd id="slash">/</kbd>
+    </div>
+  </header>
+
+  <div class="panes">
+    <nav class="rail" id="rail" aria-label="Entities by domain"></nav>
+    <main class="main"><div class="sheet" id="sheet"></div></main>
+  </div>
+</div>
+
+<script>
+  const GRAPH = /*__GRAPH__*/;
+
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch { /* private window, blocked storage */ } },
+  };
+
+  const CHEV_RIGHT = '<svg class="chev" viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2.5 8 6l-4 3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  const CHEV_DOWN = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  const ARROW_LEFT = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M7.5 2.5 4 6l3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+  const TRAIT_TEXT = {
+    history: "append-only history",
+    tenant: "org-scoped",
+    money: "carries money",
+    json: "has JSON payload",
+  };
+
+  // degree = how connected an entity is, shown in the rail so the hubs stand out
+  const degree = (name) => {
+    const e = GRAPH.entities[name];
+    return e ? e.out.length + e.in.length : 0;
+  };
+  const domainOf = (n) => GRAPH.domains.find((d) => d.n === n);
+
+  // ── navigation state ───────────────────────────────────────────────────
+  let trail = [];
+  let openGroups = new Set(GRAPH.domains.map((d) => d.n));
+
+  function go(kind, name, opts = {}) {
+    const last = trail[trail.length - 1];
+    if (!last || last.kind !== kind || last.name !== name) {
+      if (opts.replace) trail[trail.length - 1] = { kind, name };
+      else trail.push({ kind, name });
+      if (trail.length > 40) trail = trail.slice(-40);
+    }
+    const dom = kind === "entity" ? GRAPH.entities[name]?.domain : null;
+    if (dom) openGroups.add(dom);
+    store.set("dmx.view", kind + ":" + name);
+    render();
+    if (opts.keepScroll !== true) document.querySelector(".main").scrollTop = 0;
+  }
+  function back() {
+    if (trail.length > 1) { trail.pop(); render(); }
+  }
+  function truncate(i) {
+    trail = trail.slice(0, i + 1);
+    render();
+  }
+  const current = () => trail[trail.length - 1];
+
+  // ── rail ───────────────────────────────────────────────────────────────
+  function renderRail() {
+    const q = $("q").value.trim().toLowerCase();
+    const cur = current();
+    const parts = [];
+
+    for (const d of GRAPH.domains) {
+      const rows = [];
+      for (const name of d.entities) {
+        const e = GRAPH.entities[name];
+        let hit = null;
+        if (q) {
+          if (name.toLowerCase().includes(q)) hit = null;
+          else {
+            const f = e.fields.find((x) => x.name.toLowerCase().includes(q));
+            if (f) hit = f.name;
+            else continue;
+          }
+        }
+        const on = cur.kind === "entity" && cur.name === name;
+        rows.push(
+          '<button class="item" data-kind="entity" data-name="' + esc(name) + '"' +
+          (on ? ' aria-current="true"' : "") + '>' +
+            '<span class="nm">' + esc(name) + "</span>" +
+            (hit ? '<span class="hit">.' + esc(hit) + "</span>" : "") +
+            '<span class="deg" title="relationships">' + degree(name) + "</span>" +
+          "</button>",
+        );
+      }
+      if (!rows.length) continue;
+      const open = q ? true : openGroups.has(d.n);
+      parts.push(
+        '<div class="group" data-open="' + open + '" data-dom="' + d.n + '">' +
+          '<button class="grouphead" data-group="' + d.n + '" aria-expanded="' + open + '">' +
+            CHEV_RIGHT +
+            '<span class="dot" style="background:var(--dom-' + d.n + ')"></span>' +
+            '<span class="label" title="' + esc(d.label) + '">' + esc(d.label) + "</span>" +
+            '<span class="n">' + rows.length + "</span>" +
+          "</button>" +
+          '<div class="grouplist">' + rows.join("") + "</div>" +
+        "</div>",
+      );
+    }
+
+    // Enumerations get their own group so a type can be dived into as well.
+    const enumRows = Object.values(GRAPH.enums)
+      .filter((en) => !q || en.name.toLowerCase().includes(q) || en.values.some((v) => v.toLowerCase().includes(q)))
+      .map((en) => {
+        const on = cur.kind === "enum" && cur.name === en.name;
+        return '<button class="item" data-kind="enum" data-name="' + esc(en.name) + '"' +
+          (on ? ' aria-current="true"' : "") + '>' +
+          '<span class="nm">' + esc(en.name) + '</span><span class="deg">' + en.values.length + "</span></button>";
+      });
+    if (enumRows.length) {
+      const open = q ? true : openGroups.has("enums");
+      parts.push(
+        '<div class="group" data-open="' + open + '" data-dom="enums">' +
+          '<button class="grouphead" data-group="enums" aria-expanded="' + open + '">' +
+            CHEV_RIGHT +
+            '<span class="dot" style="background:var(--ink-3)"></span>' +
+            '<span class="label">Enumerations</span>' +
+            '<span class="n">' + enumRows.length + "</span>" +
+          "</button>" +
+          '<div class="grouplist">' + enumRows.join("") + "</div>" +
+        "</div>",
+      );
+    }
+
+    $("rail").innerHTML = parts.length ? parts.join("") : '<p class="empty">Nothing matches that.</p>';
+  }
+
+  // ── neighbourhood diagram ──────────────────────────────────────────────
+  // Incoming on the left, the entity in the middle, outgoing on the right —
+  // the same direction the foreign keys point.
+  function diagram(e) {
+    const W = 960, BOX_W = 196, ROW_H = 30, GAP = 9, CAP_H = 34, MAX = 9;
+    const group = (edges, key) => {
+      const m = new Map();
+      for (const ed of edges) {
+        const k = ed[key];
+        if (!m.has(k)) m.set(k, { name: k, n: 0, one: ed.one, domain: key === "target" ? ed.targetDomain : ed.sourceDomain });
+        const g = m.get(k);
+        g.n++;
+        g.one = g.one && ed.one;
+      }
+      return [...m.values()].sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
+    };
+    const left = group(e.in, "source");
+    const right = group(e.out, "target");
+    const lShow = left.slice(0, MAX), rShow = right.slice(0, MAX);
+    const rowsN = Math.max(lShow.length, rShow.length, 1);
+    const H = CAP_H + rowsN * ROW_H + (rowsN - 1) * GAP + 26;
+    const colY = (i, n) => {
+      const total = n * ROW_H + (n - 1) * GAP;
+      const top = CAP_H + ((rowsN * ROW_H + (rowsN - 1) * GAP) - total) / 2;
+      return top + i * (ROW_H + GAP);
+    };
+    const cx = (W - BOX_W) / 2;
+    const cy = CAP_H + (rowsN * ROW_H + (rowsN - 1) * GAP) / 2 - ROW_H / 2;
+
+    const node = (x, y, g, side) => {
+      const dom = g.domain || e.domain;
+      const label = g.name.length > 22 ? g.name.slice(0, 21) + "…" : g.name;
+      const mult = g.one ? "1–1" : side === "left" ? "1–N" : "N–1";
+      return '<g class="node" data-kind="entity" data-name="' + esc(g.name) + '" tabindex="0" role="button" ' +
+        'aria-label="Open ' + esc(g.name) + '">' +
+        '<rect x="' + x + '" y="' + y + '" width="' + BOX_W + '" height="' + ROW_H + '" rx="7" ' +
+          'fill="var(--surface-2)" stroke="var(--dom-' + dom + ')" stroke-width="1.25"/>' +
+        '<text x="' + (x + 11) + '" y="' + (y + ROW_H / 2 + 4) + '">' + esc(label) + "</text>" +
+        '<text class="mult" x="' + (x + BOX_W - 11) + '" y="' + (y + ROW_H / 2 + 4) + '" text-anchor="end">' +
+          mult + (g.n > 1 ? " ×" + g.n : "") + "</text>" +
+        "</g>";
+    };
+    const curve = (x1, y1, x2, y2) => {
+      const mx = (x1 + x2) / 2;
+      return '<path class="edge" d="M' + x1 + ' ' + y1 + 'C' + mx + ' ' + y1 + ' ' + mx + ' ' + y2 + ' ' + x2 + ' ' + y2 + '"/>';
+    };
+
+    let svg = '<svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="Relationship neighbourhood of ' + esc(e.name) + '">';
+    svg += '<text class="cap" x="0" y="14">' + (left.length ? "Referenced by" : "") + "</text>";
+    svg += '<text class="cap" x="' + W + '" y="14" text-anchor="end">' + (right.length ? "References" : "") + "</text>";
+    lShow.forEach((g, i) => { svg += curve(BOX_W, colY(i, lShow.length) + ROW_H / 2, cx, cy + ROW_H / 2); });
+    rShow.forEach((g, i) => { svg += curve(cx + BOX_W, cy + ROW_H / 2, W - BOX_W, colY(i, rShow.length) + ROW_H / 2); });
+    lShow.forEach((g, i) => { svg += node(0, colY(i, lShow.length), g, "left"); });
+    rShow.forEach((g, i) => { svg += node(W - BOX_W, colY(i, rShow.length), g, "right"); });
+    svg += '<rect x="' + cx + '" y="' + cy + '" width="' + BOX_W + '" height="' + ROW_H + '" rx="7" ' +
+      'fill="var(--accent-wash)" stroke="var(--accent)" stroke-width="1.75"/>' +
+      '<text x="' + (cx + BOX_W / 2) + '" y="' + (cy + ROW_H / 2 + 4) + '" text-anchor="middle" font-weight="500">' +
+      esc(e.name) + "</text>";
+    if (left.length > MAX) {
+      svg += '<text class="more" x="0" y="' + (H - 8) + '">+' + (left.length - MAX) + " more below</text>";
+    }
+    if (right.length > MAX) {
+      svg += '<text class="more" x="' + W + '" y="' + (H - 8) + '" text-anchor="end">+' + (right.length - MAX) + " more below</text>";
+    }
+    svg += "</svg>";
+    return '<div class="card diagram">' + svg + "</div>";
+  }
+
+  // ── entity view ────────────────────────────────────────────────────────
+  function relRow(r, dir) {
+    const other = dir === "out" ? r.target : r.source;
+    const dom = dir === "out" ? r.targetDomain : r.sourceDomain;
+    const card = r.one ? "one-to-one" : dir === "out" ? "many-to-one" : "one-to-many";
+    const pair = (entity, suffix) =>
+      '<span class="pair"><button class="jump" data-kind="entity" data-name="' + esc(entity) + '">' +
+      esc(entity) + '</button><span class="col">.' + esc(suffix) + "</span></span>";
+    const lhs = dir === "out"
+      ? '<span class="col">' + esc(r.fk) + '</span><span class="arrow">→</span>' + pair(other, r.targetField)
+      : pair(other, r.fk) + '<span class="arrow">→</span>' +
+        '<span class="col">this.' + esc(r.targetField) + "</span>";
+    const detail =
+      '<div class="rowdetail" hidden>' +
+        "<dl>" +
+          "<dt>Navigation</dt><dd>" + esc(r.source) + "." + esc(r.via) + " : " + esc(r.target) +
+            (r.back ? " &nbsp;·&nbsp; " + esc(r.target) + "." + esc(r.back) + " : " + esc(r.source) + "[]" : "") + "</dd>" +
+          "<dt>Column</dt><dd>" + esc(r.source) + "." + esc(r.fk) + (r.optional ? " (nullable)" : " (required)") + "</dd>" +
+          "<dt>Cardinality</dt><dd>" + card + (r.self ? " · self-reference" : "") + "</dd>" +
+          "<dt>On delete</dt><dd>" + esc(r.onDelete || "Restrict (Prisma default)") + "</dd>" +
+        "</dl>" +
+        (r.doc ? "<p>" + esc(r.doc) + "</p>" : "") +
+      "</div>";
+    return '<div class="row" data-open="false">' +
+      '<div class="lhs">' + lhs + (r.self ? '<span class="card-tag">self</span>' : "") + "</div>" +
+      '<div class="rowmeta">' +
+        '<span class="card-tag">' + card + "</span>" +
+        '<button class="disclose" aria-label="Show relationship detail" aria-expanded="false">' + CHEV_DOWN + "</button>" +
+      "</div>" + detail +
+    "</div>";
+  }
+
+  function fieldRows(e) {
+    return e.fields.map((f, i) => {
+      const flags = [];
+      if (f.isId) flags.push("PK");
+      else if (f.isUnique) flags.push("UNIQUE");
+      const type = f.enumRef
+        ? '<button class="en" data-kind="enum" data-name="' + esc(f.enumRef) + '">' + esc(f.type) + "</button>"
+        : f.type.startsWith("Decimal")
+          ? '<span class="dec">' + esc(f.type) + "</span>"
+          : esc(f.type);
+      const notes = [];
+      if (f.fk) notes.push("→ " + f.fk.target + "." + f.fk.targetField);
+      if (f.default != null) notes.push("default " + f.default);
+      if (f.isUpdatedAt) notes.push("auto-updated");
+      if (f.note) notes.push(f.note);
+      const hasDoc = Boolean(f.doc);
+      return '<tr class="' + (hasDoc ? "hasdoc" : "") + '" data-field="' + i + '"' +
+          (hasDoc ? ' tabindex="0" role="button" aria-expanded="false" aria-label="Show notes for ' + esc(f.name) + '"' : "") + ">" +
+          '<td class="f">' + esc(f.name) +
+            (flags.length ? '<span class="pk">' + flags.join(" ") + "</span>" : "") + "</td>" +
+          '<td class="t">' + type + "</td>" +
+          '<td class="n">' + (f.optional ? '<span class="req">optional</span>' : "required") + "</td>" +
+          '<td class="n">' + esc(notes.join(" · ")) + (hasDoc ? ' <span class="req">· notes</span>' : "") + "</td>" +
+        "</tr>" +
+        (hasDoc ? '<tr class="docrow" hidden><td colspan="4"><p>' + esc(f.doc) + "</p></td></tr>" : "");
+    }).join("");
+  }
+
+  function renderEntity(name) {
+    const e = GRAPH.entities[name];
+    if (!e) return '<p class="empty">Unknown entity.</p>';
+    const d = domainOf(e.domain);
+    const fkCount = e.fields.filter((f) => f.fk).length;
+
+    let html = '<div class="ehead">' +
+      '<div class="eyebrow">' +
+        '<span class="rail3" style="background:var(--dom-' + e.domain + ')"></span>' +
+        '<span class="dom" style="color:var(--dom-' + e.domain + ')">' + esc(d ? d.label : "") + "</span>" +
+        (e.subsection ? '<span class="sub">· ' + esc(e.subsection) + "</span>" : "") +
+      "</div>" +
+      "<h2>" + esc(e.name) + "</h2>" +
+      (e.doc ? '<p class="doc">' + esc(e.doc) + "</p>" : "") +
+      '<div class="badges">' +
+        '<span class="badge"><b>' + e.fields.length + "</b> columns</span>" +
+        '<span class="badge"><b>' + e.out.length + "</b> out</span>" +
+        '<span class="badge"><b>' + e.in.length + "</b> in</span>" +
+        '<span class="badge">collection <b>' + esc(e.collection) + "</b></span>" +
+        e.traits.map((t) => '<span class="badge t">' + esc(TRAIT_TEXT[t] || t) + "</span>").join("") +
+      "</div>" +
+    "</div>";
+
+    if (e.out.length || e.in.length) {
+      html += "<section>" +
+        '<div class="shead"><h3>Neighbourhood</h3>' +
+          '<span class="count">' + (e.out.length + e.in.length) + " edges</span>" +
+          '<span class="hint">Click any box to dive in</span></div>' +
+        diagram(e) +
+      "</section>";
+    }
+
+    if (e.out.length) {
+      html += "<section><div class=\"shead\"><h3>References</h3>" +
+        '<span class="count">' + e.out.length + "</span>" +
+        '<span class="hint">Foreign keys this entity owns</span></div>' +
+        '<div class="card rows">' + e.out.map((r) => relRow(r, "out")).join("") + "</div></section>";
+    }
+    if (e.in.length) {
+      html += "<section><div class=\"shead\"><h3>Referenced by</h3>" +
+        '<span class="count">' + e.in.length + "</span>" +
+        '<span class="hint">Entities that point here</span></div>' +
+        '<div class="card rows">' + e.in.map((r) => relRow(r, "in")).join("") + "</div></section>";
+    }
+
+    html += "<section><div class=\"shead\"><h3>Columns</h3>" +
+      '<span class="count">' + e.fields.length + "</span>" +
+      '<span class="hint">' + fkCount + " foreign key" + (fkCount === 1 ? "" : "s") + " · rows with notes expand</span></div>" +
+      '<div class="card tablewrap"><table><thead><tr>' +
+        "<th>Column</th><th>Type</th><th>Nullability</th><th>Notes</th>" +
+      "</tr></thead><tbody>" + fieldRows(e) + "</tbody></table></div></section>";
+
+    if (e.unique.length || e.indexes.length) {
+      html += "<section><div class=\"shead\"><h3>Keys and indexes</h3></div>" +
+        '<div class="card keys">' +
+          e.unique.map((k) => '<div class="keyline"><span class="kind">Unique</span><code>' + esc(k.join(", ")) + "</code></div>").join("") +
+          e.indexes.map((k) => '<div class="keyline"><span class="kind">Index</span><code>' + esc(k.join(", ")) + "</code></div>").join("") +
+        "</div></section>";
+    }
+    return html;
+  }
+
+  function renderEnum(name) {
+    const en = GRAPH.enums[name];
+    if (!en) return '<p class="empty">Unknown enumeration.</p>';
+    let html = '<div class="ehead">' +
+      '<div class="eyebrow"><span class="rail3" style="background:var(--ink-3)"></span>' +
+      '<span class="dom" style="color:var(--ink-2)">Enumeration</span></div>' +
+      "<h2>" + esc(en.name) + "</h2>" +
+      (en.doc ? '<p class="doc">' + esc(en.doc) + "</p>" : "") +
+      '<div class="badges"><span class="badge"><b>' + en.values.length + "</b> values</span>" +
+      '<span class="badge"><b>' + en.usedBy.length + "</b> column" + (en.usedBy.length === 1 ? "" : "s") + " use it</span></div></div>";
+    html += '<section><div class="shead"><h3>Values</h3><span class="count">' + en.values.length + "</span></div>" +
+      '<div class="card vals">' + en.values.map((v) => '<span class="val">' + esc(v) + "</span>").join("") + "</div></section>";
+    if (en.usedBy.length) {
+      html += '<section><div class="shead"><h3>Used by</h3><span class="count">' + en.usedBy.length + "</span></div>" +
+        '<div class="card rows">' + en.usedBy.map((u) =>
+          '<div class="row"><div class="lhs"><span class="pair">' +
+            '<button class="jump" data-kind="entity" data-name="' + esc(u.entity) + '">' + esc(u.entity) + "</button>" +
+            '<span class="col">.' + esc(u.field) + "</span></span></div><div></div></div>").join("") +
+        "</div></section>";
+    }
+    return html;
+  }
+
+  function renderTrail() {
+    const crumbs = trail.map((t, i) =>
+      (i ? '<span class="sep">›</span>' : "") +
+      '<button class="crumb" data-crumb="' + i + '"' + (i === trail.length - 1 ? ' aria-current="true"' : "") + ">" +
+      esc(t.name) + "</button>",
+    ).join("");
+    return '<nav class="trail" aria-label="Path">' +
+      '<button class="back" id="back"' + (trail.length > 1 ? "" : " disabled") + ">" + ARROW_LEFT + "Back</button>" +
+      crumbs + "</nav>";
+  }
+
+  function render() {
+    const cur = current();
+    const body = cur.kind === "enum" ? renderEnum(cur.name) : renderEntity(cur.name);
+    $("sheet").innerHTML = renderTrail() + body +
+      '<p class="foot">Generated from <code>' + esc(GRAPH.source) +
+      "</code>. Every column, type, note and foreign key on this page is read out of that schema — " +
+      "nothing here is written by hand, so it cannot drift from the model.</p>";
+    renderRail();
+    if (location.hash.slice(1) !== cur.name) {
+      history.replaceState(null, "", "#" + cur.name);
+    }
+    document.title = cur.name + " — Deal Room Model";
+  }
+
+  // ── events ─────────────────────────────────────────────────────────────
+  document.addEventListener("click", (ev) => {
+    const jump = ev.target.closest("[data-kind][data-name]");
+    if (jump) {
+      go(jump.dataset.kind, jump.dataset.name);
+      if (window.innerWidth <= 880 && jump.closest(".rail")) setRail(false);
+      return;
+    }
+    const gh = ev.target.closest(".grouphead");
+    if (gh) {
+      const k = gh.dataset.group === "enums" ? "enums" : Number(gh.dataset.group);
+      if (openGroups.has(k)) openGroups.delete(k); else openGroups.add(k);
+      renderRail();
+      return;
+    }
+    if (ev.target.closest("#back")) { back(); return; }
+    const crumb = ev.target.closest("[data-crumb]");
+    if (crumb) { truncate(Number(crumb.dataset.crumb)); return; }
+    const dis = ev.target.closest(".disclose");
+    if (dis) {
+      const row = dis.closest(".row");
+      const open = row.dataset.open !== "true";
+      row.dataset.open = String(open);
+      dis.setAttribute("aria-expanded", String(open));
+      row.querySelector(".rowdetail").hidden = !open;
+      return;
+    }
+    if (ev.target.closest("#railtoggle")) {
+      setRail($("app").dataset.rail !== "open");
+      return;
+    }
+    const tr = ev.target.closest("tr.hasdoc");
+    if (tr) toggleFieldDoc(tr);
+  });
+
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "/" && ev.target !== $("q")) { ev.preventDefault(); $("q").focus(); return; }
+    if (ev.key === "Escape" && ev.target === $("q")) { $("q").value = ""; renderRail(); return; }
+    if (ev.key === "Enter" || ev.key === " ") {
+      const node = ev.target.closest?.(".node, tr.hasdoc");
+      if (!node) return;
+      ev.preventDefault();
+      if (node.classList.contains("node")) go(node.dataset.kind, node.dataset.name);
+      else toggleFieldDoc(node);
+    }
+  });
+
+  function toggleFieldDoc(tr) {
+    const next = tr.nextElementSibling;
+    if (!next || !next.classList.contains("docrow")) return;
+    const open = next.hidden;
+    next.hidden = !open;
+    tr.classList.toggle("on", open);
+    tr.setAttribute("aria-expanded", String(open));
+  }
+
+  function setRail(open) {
+    $("app").dataset.rail = open ? "open" : "closed";
+    $("railtoggle").setAttribute("aria-expanded", String(open));
+    $("railtogglelabel").textContent = open ? "Hide list" : "Entities";
+  }
+
+  $("q").addEventListener("input", renderRail);
+
+  // ── boot ───────────────────────────────────────────────────────────────
+  const s = GRAPH.stats;
+  $("stats").innerHTML =
+    "<span><b>" + s.entities + "</b> entities</span>" +
+    "<span><b>" + s.relationships + "</b> relationships</span>" +
+    "<span><b>" + s.fields + "</b> columns</span>" +
+    "<span><b>" + s.enums + "</b> enums</span>" +
+    "<span><b>" + s.domains + "</b> domains</span>";
+
+  // Deep link wins, then the last thing this viewer looked at, then Deal —
+  // the hub the rest of the model hangs off, so the page opens on something real.
+  function initialView() {
+    const hash = decodeURIComponent(location.hash.slice(1));
+    if (GRAPH.entities[hash]) return { kind: "entity", name: hash };
+    if (GRAPH.enums[hash]) return { kind: "enum", name: hash };
+    const saved = (store.get("dmx.view") || "").split(":");
+    if (saved[0] === "entity" && GRAPH.entities[saved[1]]) return { kind: "entity", name: saved[1] };
+    if (saved[0] === "enum" && GRAPH.enums[saved[1]]) return { kind: "enum", name: saved[1] };
+    return { kind: "entity", name: GRAPH.entities.Deal ? "Deal" : Object.keys(GRAPH.entities)[0] };
+  }
+  trail = [initialView()];
+  if (window.innerWidth <= 880) setRail(false);
+  if (!("ontouchstart" in window)) $("slash").hidden = false; else $("slash").hidden = true;
+  render();
+
+  window.addEventListener("hashchange", () => {
+    const h = decodeURIComponent(location.hash.slice(1));
+    if (h && h !== current().name) {
+      if (GRAPH.entities[h]) go("entity", h);
+      else if (GRAPH.enums[h]) go("enum", h);
+    }
+  });
+</script>
