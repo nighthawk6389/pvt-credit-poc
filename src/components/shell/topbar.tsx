@@ -4,11 +4,11 @@ import { MenuIcon, SearchIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
-import { RoleSwitcher } from "@/components/shell/role-switcher";
+import { UserSwitcher, type SwitchableUser } from "@/components/shell/user-switcher";
 import { ThemeToggle } from "@/components/shell/theme-toggle";
 import { SidebarContent } from "@/components/shell/sidebar";
 
-export function TopBar() {
+export function TopBar({ users }: { users: SwitchableUser[] }) {
   const openPalette = () =>
     window.dispatchEvent(new Event("open-command-palette"));
 
@@ -40,7 +40,7 @@ export function TopBar() {
 
       <div className="ml-auto flex items-center gap-2">
         <ThemeToggle />
-        <RoleSwitcher />
+        <UserSwitcher users={users} />
       </div>
     </header>
   );

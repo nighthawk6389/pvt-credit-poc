@@ -7,14 +7,15 @@
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
-    "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
-    "db:reset": "prisma db push --force-reset && npm run db:seed",
+    "db:reset": "prisma migrate reset --force",
     "db:studio": "prisma studio",
     "test": "vitest run",
     "test:watch": "vitest",
-    "setup": "npm install && prisma generate && prisma db push && npm run db:seed",
-    "postinstall": "prisma generate"
+    "setup": "npm install && prisma generate && prisma migrate deploy && npm run db:seed",
+    "postinstall": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

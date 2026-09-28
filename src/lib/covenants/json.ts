@@ -1,4 +1,6 @@
-// Typed parse/serialize for the stringified-JSON columns (SQLite has no JSON).
+// Typed parse/serialize for the stringified-JSON columns. These stay String
+// columns for now (a carry-over from SQLite); moving them to native Postgres
+// Json is a follow-up alongside the enum/Decimal migration.
 // Every parse is guarded so a malformed row never 500s a page.
 
 import type { Ast, SpringingCondition, ThresholdStep } from "./types";

@@ -64,7 +64,7 @@ const MEMO_TEMPLATE = [
 ];
 
 export async function createDeal(raw: NewDealInput): Promise<{ dealId: string }> {
-  const { actor, role } = await guard("edit", "deal");
+  const { actorId, role } = await guard("edit", "deal");
   const input = NewDealSchema.parse(raw);
 
   const existing = await db.deal.findUnique({
@@ -111,7 +111,7 @@ export async function createDeal(raw: NewDealInput): Promise<{ dealId: string }>
       dealSize: input.dealSize,
       useOfProceeds: input.useOfProceeds || null,
       targetClose: input.targetClose ? new Date(input.targetClose) : null,
-      leadName: actor,
+      leadId: actorId,
       probability: 25,
       isPrivileged: input.isPrivileged,
       thesis: input.thesis || null,
@@ -138,7 +138,7 @@ export async function createDeal(raw: NewDealInput): Promise<{ dealId: string }>
   await db.dealTeamMember.create({
     data: {
       dealId: deal.id,
-      name: actor,
+      userId: actorId,
       role,
       wallCrossed: true,
       crossedAt: new Date(),
@@ -166,7 +166,7 @@ export async function createDeal(raw: NewDealInput): Promise<{ dealId: string }>
     },
   });
 
-  await logActivity(deal.id, actor, role, "originated a new deal", input.codeName);
+  await logActivity(deal.id, actorId, role, "originated a new deal", input.codeName);
 
   revalidatePath("/pipeline");
   revalidatePath("/dashboard");

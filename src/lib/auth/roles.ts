@@ -111,39 +111,3 @@ export function canSeeDeal(
 export function isValidRole(value: string | undefined | null): value is Role {
   return !!value && (ROLES as readonly string[]).includes(value);
 }
-
-export const ROLE_META: Record<
-  Role,
-  { initials: string; person: string; blurb: string; tone: string }
-> = {
-  "Deal Lead": {
-    initials: "JM",
-    person: "Jordan Mercer",
-    blurb: "Originates & owns the transaction end-to-end",
-    tone: "info",
-  },
-  Analyst: {
-    initials: "AP",
-    person: "Avery Patel",
-    blurb: "Builds the model, runs diligence & the memo",
-    tone: "primary",
-  },
-  "IC Member": {
-    initials: "RC",
-    person: "Riley Chen",
-    blurb: "Votes at Investment Committee",
-    tone: "success",
-  },
-  Compliance: {
-    initials: "SK",
-    person: "Sam Okafor",
-    blurb: "Manages wall-crossings & information barriers",
-    tone: "warning",
-  },
-  "Read-only": {
-    initials: "GU",
-    person: "Guest User",
-    blurb: "Limited view — privileged deals hidden",
-    tone: "muted",
-  },
-};

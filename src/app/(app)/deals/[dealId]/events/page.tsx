@@ -95,7 +95,7 @@ export default async function EventsPage({
                 )}
                 {e.createdBy && (
                   <p className="text-muted-foreground/70 mt-1 text-[11px]">
-                    — {e.createdBy}
+                    — {e.createdBy.name}
                   </p>
                 )}
               </div>

@@ -67,7 +67,7 @@ export default async function MemoPage({
         <VotePanel
           dealId={dealId}
           memoStatus={deal.memo.status}
-          votes={deal.votes}
+          votes={deal.votes.map((v) => ({ ...v, voter: v.voter.name }))}
         />
       </div>
     </div>

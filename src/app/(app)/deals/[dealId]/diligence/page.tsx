@@ -57,7 +57,13 @@ export default async function DiligencePage({
           </CardHeader>
         </Card>
 
-        <DdqList dealId={dealId} items={deal.ddqItems} />
+        <DdqList
+          dealId={dealId}
+          items={deal.ddqItems.map((d) => ({
+            ...d,
+            assignee: d.assignee?.name ?? d.assigneeExternal,
+          }))}
+        />
       </div>
 
       {/* Notes */}
@@ -82,7 +88,7 @@ export default async function DiligencePage({
                   <p className="text-muted-foreground text-xs leading-relaxed">
                     {n.body}
                   </p>
-                  <p className="text-muted-foreground/70 text-[11px]">— {n.author}</p>
+                  <p className="text-muted-foreground/70 text-[11px]">— {n.author.name}</p>
                 </div>
               );
             })}

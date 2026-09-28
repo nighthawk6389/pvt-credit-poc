@@ -4,8 +4,8 @@ import * as React from "react";
 import { ThumbsUp, ThumbsDown, MinusCircle, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 
-import { useRole } from "@/lib/auth/context";
-import { can, ROLE_META } from "@/lib/auth/roles";
+import { useRole, useSession } from "@/lib/auth/context";
+import { can } from "@/lib/auth/roles";
 import { voteVariant, statusVariant } from "@/lib/status";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -32,7 +32,8 @@ export function VotePanel({
   votes: Vote[];
 }) {
   const { role } = useRole();
-  const me = ROLE_META[role].person;
+  const session = useSession();
+  const me = session?.name ?? "";
   const canVote = can(role, "vote", "vote");
   const canApprove = can(role, "approve", "memo");
   const [comment, setComment] = React.useState("");
