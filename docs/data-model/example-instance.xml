@@ -387,4 +387,42 @@
     </Alert>
   </Alerts>
 
+  <!-- ── Identifiers: what the outside world calls these things ────────── -->
+  <!-- The company resolves on its Bloomberg ID; the unitranche picked up an
+       agent reference, a CUSIP (with the ISIN that embeds it) and a LoanX ID
+       when it closed. Synthetic but well-formed: the check digits are real. -->
+  <InstrumentIdentifiers>
+    <InstrumentIdentifier>
+      <id>iid_1</id><orgId>org_lumen</orgId><companyId>cmp_arcline</companyId>
+      <scheme>BBG_COMPANY</scheme><value>999900101</value><namespace/>
+      <validFrom>2021-01-04T00:00:00Z</validFrom><source>BLOOMBERG</source>
+      <createdAt>2025-11-04T00:00:00Z</createdAt>
+    </InstrumentIdentifier>
+    <InstrumentIdentifier>
+      <id>iid_2</id><orgId>org_lumen</orgId><facilityId>fac_arcline_uni</facilityId>
+      <scheme>AGENT_FACILITY</scheme><value>LANTERN-UNI-1</value><namespace>LUMEN AGENCY SERVICES</namespace>
+      <validFrom>2026-01-28T00:00:00Z</validFrom><source>AGENT_NOTICE</source>
+      <createdAt>2026-01-28T00:00:00Z</createdAt>
+    </InstrumentIdentifier>
+    <InstrumentIdentifier>
+      <id>iid_3</id><orgId>org_lumen</orgId><facilityId>fac_arcline_uni</facilityId>
+      <scheme>CUSIP</scheme><value>LMN101AB5</value><namespace/>
+      <validFrom>2026-01-28T00:00:00Z</validFrom><source>CUSIP_GLOBAL</source>
+      <verifiedById>usr_reyes</verifiedById><verifiedAt>2026-01-29T10:00:00Z</verifiedAt>
+      <createdAt>2026-01-28T00:00:00Z</createdAt>
+    </InstrumentIdentifier>
+    <InstrumentIdentifier>
+      <id>iid_4</id><orgId>org_lumen</orgId><facilityId>fac_arcline_uni</facilityId>
+      <scheme>ISIN</scheme><value>USLMN101AB52</value><namespace/>
+      <validFrom>2026-01-28T00:00:00Z</validFrom><source>CUSIP_GLOBAL</source>
+      <createdAt>2026-01-28T00:00:00Z</createdAt>
+    </InstrumentIdentifier>
+    <InstrumentIdentifier>
+      <id>iid_5</id><orgId>org_lumen</orgId><facilityId>fac_arcline_uni</facilityId>
+      <scheme>LOANX</scheme><value>LX900101</value><namespace/>
+      <validFrom>2026-02-10T00:00:00Z</validFrom><source>MARKIT</source>
+      <createdAt>2026-02-10T00:00:00Z</createdAt>
+    </InstrumentIdentifier>
+  </InstrumentIdentifiers>
+
 </DealRoomDataset>

@@ -7,8 +7,8 @@
     source:    docs/data-model/schema.canonical.prisma
     generator: docs/data-model/generate-xsd.mjs   (node generate-xsd.mjs)
 
-  This is a reading/interchange projection of the canonical model: 68 entity
-  types, 39 enumerations, and root-level key/keyref pairs mirroring the
+  This is a reading/interchange projection of the canonical model: 69 entity
+  types, 41 enumerations, and root-level key/keyref pairs mirroring the
   relational foreign keys. Validating an instance therefore checks referential
   integrity, not just shape.
 
@@ -503,6 +503,41 @@
       <xs:enumeration value="AUD"/>
       <xs:enumeration value="CHF"/>
       <xs:enumeration value="SEK"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="IdScheme">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="INTERNAL"/>
+      <xs:enumeration value="LEI"/>
+      <xs:enumeration value="BBG_COMPANY"/>
+      <xs:enumeration value="CIK"/>
+      <xs:enumeration value="CUSIP"/>
+      <xs:enumeration value="ISIN"/>
+      <xs:enumeration value="FIGI"/>
+      <xs:enumeration value="LOANX"/>
+      <xs:enumeration value="AGENT_FACILITY"/>
+      <xs:enumeration value="CLEARPAR"/>
+      <xs:enumeration value="WSO"/>
+      <xs:enumeration value="ADMIN_POSITION"/>
+      <xs:enumeration value="UCC_FILING"/>
+      <xs:enumeration value="PARCEL"/>
+      <xs:enumeration value="OTHER"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="IdSource">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="INTERNAL"/>
+      <xs:enumeration value="AGENT_NOTICE"/>
+      <xs:enumeration value="BLOOMBERG"/>
+      <xs:enumeration value="MARKIT"/>
+      <xs:enumeration value="CUSIP_GLOBAL"/>
+      <xs:enumeration value="GLEIF"/>
+      <xs:enumeration value="SEC"/>
+      <xs:enumeration value="FUND_ADMIN"/>
+      <xs:enumeration value="FILING_OFFICE"/>
+      <xs:enumeration value="MANUAL"/>
     </xs:restriction>
   </xs:simpleType>
 
@@ -2759,6 +2794,82 @@
           <xs:documentation>Defaults to BLOOMBERG.</xs:documentation>
         </xs:annotation>
       </xs:element>
+      <xs:element name="idScheme" type="pc:IdScheme" minOccurs="0">
+        <xs:annotation>
+          <xs:documentation>The comp's own identifier when the print carries one (CUSIP, LoanX, FIGI), so repeated prints deduplicate and a comp can be matched to our own facility. A third party's instrument, so it is not an InstrumentIdentifier.</xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element name="idValue" type="xs:string" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- ══════ 10. IDENTIFIERS & CROSS-REFERENCES ════════════════════════════ -->
+
+  <xs:complexType name="InstrumentIdentifier">
+    <xs:annotation>
+      <xs:documentation>One identifier for exactly one entity, in force from validFrom until validTo. Each scheme is attached at its real level: LEI on the LegalEntity that borrows, Bloomberg company ID on the Company, CUSIP and LoanX on the Facility, the administrator's ID on the Position, the UCC-1 filing on the Collateral. Retired rows are kept, so &quot;what was this tranche called on 31 March?&quot; can be answered for marks and agent reconciliations. Enforced in the migration because Prisma cannot express them: exactly one target is set (CHECK num_nonnulls(...) = 1); a live value (validTo IS NULL) names one thing only, and a target holds one live value per scheme and namespace (partial unique indexes). Check digits are validated on write.</xs:documentation>
+    </xs:annotation>
+    <xs:sequence>
+      <xs:element name="id" type="pc:Cuid">
+        <xs:annotation>
+          <xs:documentation>Primary key.</xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element name="orgId" type="pc:Cuid">
+        <xs:annotation>
+          <xs:documentation>Foreign key → Organization.id.</xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element name="companyId" type="pc:Cuid" minOccurs="0">
+        <xs:annotation>
+          <xs:documentation>Foreign key → Company.id.</xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element name="legalEntityId" type="pc:Cuid" minOccurs="0">
+        <xs:annotation>
+          <xs:documentation>Foreign key → LegalEntity.id.</xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element name="facilityId" type="pc:Cuid" minOccurs="0">
+        <xs:annotation>
+          <xs:documentation>Foreign key → Facility.id.</xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element name="positionId" type="pc:Cuid" minOccurs="0">
+        <xs:annotation>
+          <xs:documentation>Foreign key → Position.id.</xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element name="collateralId" type="pc:Cuid" minOccurs="0">
+        <xs:annotation>
+          <xs:documentation>Foreign key → Collateral.id.</xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element name="scheme" type="pc:IdScheme"/>
+      <xs:element name="value" type="xs:string">
+        <xs:annotation>
+          <xs:documentation>Normalised: upper-case, separators removed.</xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element name="namespace" type="xs:string" default="">
+        <xs:annotation>
+          <xs:documentation>The issuer, for schemes unique only inside one system (agent, WSO instance, filing office). Empty rather than NULL so it takes part in the uniqueness rule. Defaults to an empty string.</xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element name="validFrom" type="xs:dateTime"/>
+      <xs:element name="validTo" type="xs:dateTime" minOccurs="0">
+        <xs:annotation>
+          <xs:documentation>Set when the identifier is retired; the row is kept for history.</xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element name="source" type="pc:IdSource"/>
+      <xs:element name="verifiedById" type="pc:Cuid" minOccurs="0">
+        <xs:annotation>
+          <xs:documentation>Foreign key → User.id.</xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element name="verifiedAt" type="xs:dateTime" minOccurs="0"/>
+      <xs:element name="createdAt" type="xs:dateTime"/>
     </xs:sequence>
   </xs:complexType>
 
@@ -3246,6 +3357,13 @@
             </xs:sequence>
           </xs:complexType>
         </xs:element>
+        <xs:element name="InstrumentIdentifiers" minOccurs="0">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="InstrumentIdentifier" type="pc:InstrumentIdentifier" minOccurs="0" maxOccurs="unbounded"/>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
       </xs:sequence>
     </xs:complexType>
 
@@ -3410,6 +3528,10 @@
       <xs:selector xpath="pc:Industries/pc:Industry"/>
       <xs:field xpath="pc:id"/>
     </xs:key>
+    <xs:key name="key_InstrumentIdentifier_id">
+      <xs:selector xpath="pc:InstrumentIdentifiers/pc:InstrumentIdentifier"/>
+      <xs:field xpath="pc:id"/>
+    </xs:key>
     <xs:key name="key_KpiSnapshot_id">
       <xs:selector xpath="pc:KpiSnapshots/pc:KpiSnapshot"/>
       <xs:field xpath="pc:id"/>
@@ -3527,7 +3649,7 @@
       <xs:field xpath="pc:id"/>
     </xs:key>
 
-    <!-- Foreign keys: 121 references, mirroring the relational model. -->
+    <!-- Foreign keys: 128 references, mirroring the relational model. -->
     <xs:keyref name="fk_ActivityEvent_actorId" refer="pc:key_User_id">
       <xs:selector xpath="pc:ActivityEvents/pc:ActivityEvent"/>
       <xs:field xpath="pc:actorId"/>
@@ -3835,6 +3957,34 @@
     <xs:keyref name="fk_Industry_parentId" refer="pc:key_Industry_id">
       <xs:selector xpath="pc:Industries/pc:Industry"/>
       <xs:field xpath="pc:parentId"/>
+    </xs:keyref>
+    <xs:keyref name="fk_InstrumentIdentifier_collateralId" refer="pc:key_Collateral_id">
+      <xs:selector xpath="pc:InstrumentIdentifiers/pc:InstrumentIdentifier"/>
+      <xs:field xpath="pc:collateralId"/>
+    </xs:keyref>
+    <xs:keyref name="fk_InstrumentIdentifier_companyId" refer="pc:key_Company_id">
+      <xs:selector xpath="pc:InstrumentIdentifiers/pc:InstrumentIdentifier"/>
+      <xs:field xpath="pc:companyId"/>
+    </xs:keyref>
+    <xs:keyref name="fk_InstrumentIdentifier_facilityId" refer="pc:key_Facility_id">
+      <xs:selector xpath="pc:InstrumentIdentifiers/pc:InstrumentIdentifier"/>
+      <xs:field xpath="pc:facilityId"/>
+    </xs:keyref>
+    <xs:keyref name="fk_InstrumentIdentifier_legalEntityId" refer="pc:key_LegalEntity_id">
+      <xs:selector xpath="pc:InstrumentIdentifiers/pc:InstrumentIdentifier"/>
+      <xs:field xpath="pc:legalEntityId"/>
+    </xs:keyref>
+    <xs:keyref name="fk_InstrumentIdentifier_orgId" refer="pc:key_Organization_id">
+      <xs:selector xpath="pc:InstrumentIdentifiers/pc:InstrumentIdentifier"/>
+      <xs:field xpath="pc:orgId"/>
+    </xs:keyref>
+    <xs:keyref name="fk_InstrumentIdentifier_positionId" refer="pc:key_Position_id">
+      <xs:selector xpath="pc:InstrumentIdentifiers/pc:InstrumentIdentifier"/>
+      <xs:field xpath="pc:positionId"/>
+    </xs:keyref>
+    <xs:keyref name="fk_InstrumentIdentifier_verifiedById" refer="pc:key_User_id">
+      <xs:selector xpath="pc:InstrumentIdentifiers/pc:InstrumentIdentifier"/>
+      <xs:field xpath="pc:verifiedById"/>
     </xs:keyref>
     <xs:keyref name="fk_KpiSnapshot_orgId" refer="pc:key_Organization_id">
       <xs:selector xpath="pc:KpiSnapshots/pc:KpiSnapshot"/>

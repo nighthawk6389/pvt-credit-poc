@@ -18,6 +18,8 @@
 //   3. Every actor is a User FK — no free-text name strings.
 //   4. Multi-tenant: root aggregates carry orgId.
 //   5. Amounts always travel with a currency; FX is a first-class table.
+//   6. Real-world identifiers (CUSIP, LoanX, LEI, …) are effective-dated rows
+//      in InstrumentIdentifier, never nullable columns on the thing they name.
 // ═══════════════════════════════════════════════════════════════════════════
 
 generator client {
@@ -347,6 +349,37 @@ enum Currency {
   SEK
 }
 
+enum IdScheme {
+  INTERNAL
+  LEI
+  BBG_COMPANY
+  CIK
+  CUSIP
+  ISIN
+  FIGI
+  LOANX
+  AGENT_FACILITY
+  CLEARPAR
+  WSO
+  ADMIN_POSITION
+  UCC_FILING
+  PARCEL
+  OTHER
+}
+
+enum IdSource {
+  INTERNAL
+  AGENT_NOTICE
+  BLOOMBERG
+  MARKIT
+  CUSIP_GLOBAL
+  GLEIF
+  SEC
+  FUND_ADMIN
+  FILING_OFFICE
+  MANUAL
+}
+
 // ═══════════════════════ 1. IDENTITY, ACCESS & AUDIT ═══════════════════════
 // Replaces free-text actor strings with real users, and makes the information
 // barrier (wall-cross) an auditable event stream rather than a boolean.
@@ -369,6 +402,7 @@ model Organization {
   alerts       Alert[]
   auditEvents  AuditEvent[]
   kpiSnapshots KpiSnapshot[]
+  identifiers  InstrumentIdentifier[]
 }
 
 model User {
@@ -411,6 +445,7 @@ model User {
   savedViews         SavedView[]
   auditEvents        AuditEvent[]
   activityEvents     ActivityEvent[]
+  idsVerified        InstrumentIdentifier[]
 }
 
 model OrgMembership {
@@ -575,6 +610,7 @@ model Company {
   ratings          RatingHistory[]
   watchlistEvents  WatchlistEvent[]
   contacts         Contact[]
+  identifiers      InstrumentIdentifier[]
 
   @@unique([orgId, name])
   @@index([industryId])
@@ -595,6 +631,7 @@ model LegalEntity {
 
   facilityRoles FacilityObligor[]
   collateral    Collateral[]
+  identifiers   InstrumentIdentifier[]
 
   @@index([companyId, role])
 }
@@ -1029,6 +1066,7 @@ model Facility {
   allocations    Allocation[]
   cashflows      FacilityCashflow[]
   amendments     Amendment[]
+  identifiers    InstrumentIdentifier[]
 
   @@index([dealId])
 }
@@ -1076,6 +1114,7 @@ model Collateral {
   appraisedValue Decimal?     @db.Decimal(20, 4)
   currency       Currency     @default(USD)
   appraisedOn    DateTime?
+  identifiers    InstrumentIdentifier[]
 
   @@index([facilityId])
 }
@@ -1395,6 +1434,7 @@ model Position {
   transactions PositionTransaction[]
   valuations   Valuation[]
   snapshots    ReturnSnapshot[]
+  identifiers  InstrumentIdentifier[]
 
   @@unique([fundId, facilityId])
   @@index([facilityId])
@@ -1581,6 +1621,68 @@ model MarketComp {
   yieldPct     Decimal?      @db.Decimal(9, 4)
   pricedOn     DateTime
   source       String        @default("BLOOMBERG")
+  /// The comp's own identifier when the print carries one (CUSIP, LoanX, FIGI),
+  /// so repeated prints deduplicate and a comp can be matched to our own
+  /// facility. A third party's instrument, so it is not an InstrumentIdentifier.
+  idScheme     IdScheme?
+  idValue      String?
 
   @@index([sector, pricedOn])
+  @@index([idScheme, idValue])
+}
+
+// ═════════════════════ 10. IDENTIFIERS & CROSS-REFERENCES ══════════════════
+// The real-world names of what this model tracks: CUSIP, ISIN, LoanX and FIGI
+// for a facility; LEI and Bloomberg company ID for an issuer; the agent's and
+// fund administrator's own references; UCC filing numbers for collateral.
+// They are optional, plural and change over time — a tranche picks them up as
+// it closes and trades, and an amend-and-extend retires one and issues another
+// — so they are effective-dated rows rather than nullable columns.
+
+/// One identifier for exactly one entity, in force from validFrom until
+/// validTo. Each scheme is attached at its real level: LEI on the LegalEntity
+/// that borrows, Bloomberg company ID on the Company, CUSIP and LoanX on the
+/// Facility, the administrator's ID on the Position, the UCC-1 filing on the
+/// Collateral. Retired rows are kept, so "what was this tranche called on
+/// 31 March?" can be answered for marks and agent reconciliations. Enforced in
+/// the migration because Prisma cannot express them: exactly one target is set
+/// (CHECK num_nonnulls(...) = 1); a live value (validTo IS NULL) names one
+/// thing only, and a target holds one live value per scheme and namespace
+/// (partial unique indexes). Check digits are validated on write.
+model InstrumentIdentifier {
+  id            String       @id @default(cuid())
+  orgId         String
+  org           Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  companyId     String?
+  company       Company?     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  legalEntityId String?
+  legalEntity   LegalEntity? @relation(fields: [legalEntityId], references: [id], onDelete: Cascade)
+  facilityId    String?
+  facility      Facility?    @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  positionId    String?
+  position      Position?    @relation(fields: [positionId], references: [id], onDelete: Cascade)
+  collateralId  String?
+  collateral    Collateral?  @relation(fields: [collateralId], references: [id], onDelete: Cascade)
+  scheme        IdScheme
+  /// Normalised: upper-case, separators removed.
+  value         String
+  /// The issuer, for schemes unique only inside one system (agent, WSO
+  /// instance, filing office). Empty rather than NULL so it takes part in
+  /// the uniqueness rule.
+  namespace     String       @default("")
+  validFrom     DateTime
+  /// Set when the identifier is retired; the row is kept for history.
+  validTo       DateTime?
+  source        IdSource
+  verifiedById  String?
+  verifiedBy    User?        @relation(fields: [verifiedById], references: [id])
+  verifiedAt    DateTime?
+  createdAt     DateTime     @default(now())
+
+  @@index([orgId, scheme, value])
+  @@index([companyId])
+  @@index([legalEntityId])
+  @@index([facilityId])
+  @@index([positionId])
+  @@index([collateralId])
 }

@@ -28,6 +28,7 @@
     --dom-7: #2b6cae;
     --dom-8: #86701c;
     --dom-9: #64748b;
+    --dom-10: #b23a6b;
 
     --serif: "Spectral", Georgia, "Times New Roman", serif;
     --sans: "Archivo", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -60,6 +61,7 @@
       --dom-7: #7fb2e8;
       --dom-8: #ccb45c;
       --dom-9: #9fadbd;
+      --dom-10: #e88aaf;
     }
   }
 
@@ -88,6 +90,7 @@
     --dom-7: #7fb2e8;
     --dom-8: #ccb45c;
     --dom-9: #9fadbd;
+    --dom-10: #e88aaf;
   }
 
   * { box-sizing: border-box; }
@@ -645,7 +648,7 @@
           : esc(f.type);
       const notes = [];
       if (f.fk) notes.push("→ " + f.fk.target + "." + f.fk.targetField);
-      if (f.default != null) notes.push("default " + f.default);
+      if (f.default != null) notes.push("default " + (f.default === "" ? '""' : f.default));
       if (f.isUpdatedAt) notes.push("auto-updated");
       if (f.note) notes.push(f.note);
       const hasDoc = Boolean(f.doc);

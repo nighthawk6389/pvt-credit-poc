@@ -241,7 +241,7 @@ for (const m of models) {
       f.isId ? "Primary key." : null,
       f.isUnique && !f.isId ? "Unique." : null,
       f.isUpdatedAt ? "Maintained by the write path on every update." : null,
-      f.default != null ? `Defaults to ${f.default}.` : null,
+      f.default != null ? `Defaults to ${f.default === "" ? "an empty string" : f.default}.` : null,
       fkDoc(m.name, f.name),
     ];
     const body = docBlock("        ", notes);

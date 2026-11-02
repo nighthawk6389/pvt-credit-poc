@@ -5,7 +5,7 @@ A clean-slate reference model covering everything a deal room dashboard needs:
 **structuring & syndication**, **covenant monitoring**, **fund/position
 economics**, and the **time-series history** that dashboard analytics depend on.
 
-- **Schema:** [`schema.canonical.prisma`](./schema.canonical.prisma) — 68 models, 39 enums, validated.
+- **Schema:** [`schema.canonical.prisma`](./schema.canonical.prisma) — 69 models, 41 enums, validated.
 - **XSD view:** [`schema.canonical.xsd`](./schema.canonical.xsd) — the same model as XML Schema,
   generated from the Prisma file. Often the faster read: types, enums and foreign keys are all
   spelled out in one place. See [§8](#8-xsd-view).
@@ -38,7 +38,7 @@ CANONICAL_DATABASE_URL="postgresql://u:p@localhost:5432/canonical" \
 
 ## 1. Design principles
 
-Five rules drive most of the structural differences from a naive model.
+Six rules drive most of the structural differences from a naive model.
 
 | # | Principle | Why it matters |
 |---|---|---|
@@ -47,6 +47,7 @@ Five rules drive most of the structural differences from a naive model.
 | 3 | **Every actor is a `User` FK** | Free-text `uploadedBy`/`assignee`/`actor` strings cannot be filtered, permissioned, or attributed. |
 | 4 | **Multi-tenant by `orgId` on root aggregates** | Org scoping at the aggregate root keeps every dashboard query naturally partitioned. |
 | 5 | **Amounts travel with a currency; FX is first-class** | A single-currency assumption is unpickable later. |
+| 6 | **Real-world identifiers are effective-dated rows, never columns** | A tranche has no CUSIP at sourcing, gains one at close, and an amend-and-extend retires its LoanX ID. A nullable `cusip` column can represent none of that. See [`InstrumentIdentifier`](#37-identifiers--cross-references). |
 
 Two further choices are worth calling out:
 
@@ -73,12 +74,13 @@ Two further choices are worth calling out:
 | 7 | Financials & covenants | 9 | `FieldDefinition` `FinancialPeriod` `FundamentalFact` `EbitdaAdjustment` `CovenantDefinition` `CovenantThresholdStep` `CovenantTest` `ReportingObligation` `ReportingDelivery` |
 | 8 | Funds, positions & returns | 6 | `Fund` `Allocation` `Position` `PositionTransaction` `Valuation` `ReturnSnapshot` |
 | 9 | Risk, alerts & reference data | 8 | `RatingHistory` `WatchlistEvent` `KpiSnapshot` `Alert` `SavedView` `ReferenceRate` `FxRate` `MarketComp` |
+| 10 | Identifiers & cross-references | 1 | `InstrumentIdentifier` |
 
 ---
 
 ## 3. Entity–relationship diagrams
 
-Split by domain — one diagram for 68 models would be unreadable.
+Split by domain — one diagram for 69 models would be unreadable.
 
 ### 3.1 Identity, access & the information barrier
 
@@ -184,6 +186,38 @@ erDiagram
 
 ---
 
+### 3.7 Identifiers & cross-references
+
+```mermaid
+erDiagram
+  Company ||--o{ InstrumentIdentifier : "Bloomberg company ID, CIK"
+  LegalEntity ||--o{ InstrumentIdentifier : "LEI"
+  Facility ||--o{ InstrumentIdentifier : "CUSIP, ISIN, LoanX, FIGI, agent ref"
+  Position ||--o{ InstrumentIdentifier : "fund admin ID"
+  Collateral ||--o{ InstrumentIdentifier : "UCC-1 filing, parcel"
+  User ||--o{ InstrumentIdentifier : "verifies"
+```
+
+One table, one row per identifier, exactly one target per row. What makes it
+trustworthy is enforced in the migration rather than the Prisma schema, which
+cannot express either rule:
+
+- **`CHECK (num_nonnulls(companyId, legalEntityId, facilityId, positionId, collateralId) = 1)`**,
+  so an identifier always names exactly one thing.
+- **Partial unique indexes over live rows (`WHERE validTo IS NULL`)**: a live
+  `(scheme, namespace, value)` names one thing only, and a target holds one live
+  value per scheme. Retired rows are exempt, so an amend-and-extend retires a
+  LoanX ID without deleting the history marks were taken against.
+
+`namespace` carries the issuer for schemes that are only unique inside one
+system (the agent's facility reference, a WSO instance, a filing office). It is
+an empty string rather than NULL so it takes part in the uniqueness rule.
+
+The running app already implements this for borrowers and facilities
+(`prisma/migrations/20261102120000_instrument_identifiers`), including the
+check-digit validation in `src/lib/identifiers` and the Bloomberg lookup that
+resolves an issuer by identifier rather than by name.
+
 ## 4. Entity catalog
 
 Selected entities where the modeling decision is non-obvious. (Names are self-explanatory
@@ -212,6 +246,8 @@ for the rest; the schema file carries inline commentary on every one.)
 | `KpiSnapshot` | Generic metric time-series | `@@unique([orgId, asOf, scopeType, scopeId, metric])` — new tiles need no new tables |
 | `Alert` | Dashboard alert inbox | `dedupeKey` so a recurring condition updates one alert instead of spamming |
 | `SavedView` | Per-user dashboard filters/layout | `route` + `filters` `Json` |
+| `InstrumentIdentifier` | CUSIP, ISIN, LoanX, FIGI, LEI, Bloomberg ID, agent and admin refs, UCC filings | effective-dated (`validFrom`/`validTo`); exactly one target; live-value uniqueness via partial indexes; check digits validated on write |
+| `MarketComp` | Persisted DLEN prints | `idScheme`/`idValue` keep the comp's own identifier, so prints deduplicate and match to our facilities |
 
 ---
 
@@ -260,7 +296,7 @@ would show, mapped to the entities that serve it.
 
 ## 6. What this changes vs. the current schema
 
-The running app (`prisma/schema.prisma`, 25 models) covers deal execution and covenant
+The running app (`prisma/schema.prisma`, 29 models) covers deal execution and covenant
 monitoring well. This model closes the structural gaps.
 
 | Current | Canonical | Why |
@@ -280,6 +316,12 @@ monitoring well. This model closes the structural gaps.
 | `FinancialStatement` **fixed columns** | `FinancialPeriod` + `FundamentalFact` + `FieldDefinition` | new metrics without migrations; explicit FLOW/STOCK aggregation |
 | Facility pricing **scalars** | `FacilityPricing` effective-dated | repricings are history |
 | *(absent)* | `Alert`, `KpiSnapshot`, `SavedView`, `FxRate`, `ReferenceRate`, `MarketComp`, `Industry`, `LegalEntity`, `Contact`, `Advisor`, `QAThread`, `Comment`, `Milestone`, `ICMeeting` | dashboard, reference-data and collaboration surface |
+| Instruments known only by **cuid + name**; Bloomberg asked by **name or deal ID** | `InstrumentIdentifier` on company, legal entity, facility, position, collateral | names are not identifiers: they are not unique and they change, and no real Bloomberg request can be made from one |
+
+Since this table was written the running app has adopted identity (step 2 below: `User`,
+`Organization`, `OrgMembership`, actor FKs) and instrument identifiers for borrowers and
+facilities, so the first row and the identifier row now describe the canonical model's
+wider coverage rather than a gap in the app.
 
 Carried forward largely intact (the covenant engine work): `CovenantDefinition`,
 `CovenantTest` with recompute-vs-reported reconciliation, `FundamentalFact`,
@@ -301,7 +343,9 @@ This is a design artifact — adopting it is a real migration, not a drop-in. A 
    from `Borrower` to `Position`. This is the largest behavioral change — portfolio and
    returns views move from deal-level to position-level roll-ups.
 5. **Remaining surface** (syndication, collateral, amendments, alerts, KPI snapshots) as
-   the corresponding dashboard widgets are built.
+   the corresponding dashboard widgets are built. `InstrumentIdentifier` gains its
+   legal-entity, position and collateral targets as those models arrive; the table,
+   its constraints and the validator already exist for borrowers and facilities.
 
 Steps 1–3 are additive and low-risk. Step 4 changes how exposure and returns are computed,
 so it wants its own migration + reconciliation against current numbers.
@@ -325,7 +369,7 @@ node docs/data-model/generate-xsd.mjs          # or: npm run docs:xsd
 |---|---|
 | Target namespace | `urn:lumen:private-credit-deal-room:1.0` |
 | Document element | `DealRoomDataset` — one optional collection per entity type |
-| Contents | 68 `xs:complexType` entities · 39 `xs:simpleType` enumerations · 69 `xs:key` · 121 `xs:keyref` |
+| Contents | 69 `xs:complexType` entities · 41 `xs:simpleType` enumerations · 70 `xs:key` · 128 `xs:keyref` |
 
 ### How the Prisma model maps onto it
 
@@ -400,7 +444,7 @@ What it gives you that the diagrams in §3 cannot:
 | **Columns** | Type, nullability, defaults, PK/unique flags and the `///` note for each column. Enum types are links — click `DealStage` and you get its values and every column that uses it. |
 | **Trail** | A breadcrumb of the path you took, so a four-hop dive is retraceable and each step is clickable. |
 | **Search** | Matches entity names *and* column names — typing `ebitda` finds the three entities that carry one. |
-| **Degree** | The number beside each entity in the sidebar is its edge count, so the hubs are obvious: `User` 31, `Deal` 24, `Organization` and `Company` 11 each. |
+| **Degree** | The number beside each entity in the sidebar is its edge count, so the hubs are obvious: `User` 32, `Deal` 24, `Organization` and `Company` 12 each. |
 
 Deep links work: `explorer.html#CovenantTest` opens straight to that entity.
 The page remembers the last entity you looked at, follows your light/dark
