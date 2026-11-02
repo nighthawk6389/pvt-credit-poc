@@ -9,6 +9,16 @@ import {
   toJson,
   type ThresholdStep,
 } from "../src/lib/covenants/index";
+import {
+  INTERNAL_PREFIX,
+  cusipCheckDigit,
+  isinCheckDigit,
+  leiCheckDigits,
+  validateIdentifier,
+  type IdScheme,
+  type IdSource,
+  type IdTarget,
+} from "../src/lib/identifiers/index";
 
 const db = new PrismaClient();
 
@@ -43,6 +53,60 @@ function makeActorRef(users: Record<string, string>) {
 
 const D = (y: number, m: number, d = 15, h = 0) =>
   new Date(Date.UTC(y, m - 1, d, h));
+
+const addMonths = (date: Date, months: number) => {
+  const d = new Date(date);
+  d.setUTCMonth(d.getUTCMonth() + months);
+  return d;
+};
+
+// ── Identifiers ─────────────────────────────────────────────────────────
+// Every identifier goes through the validator the app uses, so seed data can
+// never hold a value the app would reject. The companies are fictional, so the
+// external identifiers are synthetic but well-formed: real check digits on
+// recognisably fake bases (LEIs start DEMO00, CUSIPs LMN, Bloomberg IDs 9999).
+
+const internalSeq: Record<IdTarget, number> = { borrower: 0, facility: 0 };
+
+async function addIdentifier(
+  target: IdTarget,
+  targetId: string,
+  scheme: IdScheme,
+  raw: string,
+  opts: { source: IdSource; namespace?: string; validFrom?: Date; validTo?: Date },
+) {
+  const v = validateIdentifier({ target, scheme, value: raw, namespace: opts.namespace });
+  if (!v.ok) throw new Error(`Seed identifier rejected: ${v.error}`);
+  await db.instrumentIdentifier.create({
+    data: {
+      ...(target === "borrower" ? { borrowerId: targetId } : { facilityId: targetId }),
+      scheme: v.scheme,
+      value: v.value,
+      namespace: v.namespace,
+      source: opts.source,
+      validFrom: opts.validFrom,
+      validTo: opts.validTo,
+    },
+  });
+}
+
+/** Our own quotable reference, issued when the record is created. */
+async function addInternalRef(target: IdTarget, targetId: string, validFrom: Date) {
+  const ref = `${INTERNAL_PREFIX[target]}-${String(++internalSeq[target]).padStart(6, "0")}`;
+  await addIdentifier(target, targetId, "INTERNAL", ref, { source: "INTERNAL", validFrom });
+}
+
+const pad = (n: number, w: number) => String(n).padStart(w, "0");
+const demoLei = (n: number) => `DEMO00${pad(n, 12)}` + leiCheckDigits(`DEMO00${pad(n, 12)}`);
+const demoCusip = (n: number) => `LMN${pad(n, 3)}AB` + cusipCheckDigit(`LMN${pad(n, 3)}AB`);
+/** A US ISIN embeds the CUSIP, so derive it rather than inventing a second number. */
+const isinFor = (cusip: string) => `US${cusip}` + isinCheckDigit(`US${cusip}`);
+const demoLoanX = (n: number) => `LX9${pad(n, 5)}`;
+const demoBbgCompany = (n: number) => `9999${pad(n, 5)}`;
+
+const AGENT = "Lumen Agency Services";
+/** Identifiers predate the deals; the borrower existed long before we lent to it. */
+const ISSUER_IDS_FROM = D(2021, 1, 4);
 const QUARTER_ENDS = [
   { label: "Q1 2024", y: 2024, m: 3 },
   { label: "Q2 2024", y: 2024, m: 6 },
@@ -58,6 +122,7 @@ async function main() {
   console.log("⟳ Resetting tables…");
   // Order matters for FK constraints.
   await db.activityLog.deleteMany();
+  await db.instrumentIdentifier.deleteMany();
   await db.reportingDelivery.deleteMany();
   await db.reportingObligation.deleteMany();
   await db.covenantDefTest.deleteMany();
@@ -158,10 +223,23 @@ async function main() {
     { name: "Redwood Restaurants", sector: "Consumer", city: "Portland, OR", sponsor: "Tidewater PE", size: 60, spread: 725, leverage: 6.1, ebitda: 11, stage: "Closed", status: "On Hold", rating: "7", trend: "Deteriorating", watch: true, facType: "Unitranche", ceo: "Hannah Reyes", desc: "Fast-casual restaurant platform." },
   ];
 
-  console.log("→ Borrowers + facilities + financials + valuations + deals");
+  // Bloomberg coverage. Borrowers with a Bloomberg company ID resolve on it;
+  // Redwood has only an LEI, so it resolves on that; the two pipeline names
+  // have neither yet, which is what "no coverage" looks like in the app. Real
+  // coverage of private, sponsor-backed borrowers is far thinner than this —
+  // it is generous here so the Bloomberg screens have data to show.
+  const NO_BBG_COMPANY_ID = new Set(["BlueRidge SaaS", "Tempo Fitness", "Redwood Restaurants"]);
+  // Facilities large enough to be CUSIP'd (CLO-eligible), and the one credit
+  // that went through an amend-and-extend, retiring its first LoanX ID.
+  const CUSIP_MIN_SIZE = 100;
+  const AMEND_AND_EXTEND = "Ironclad Industrial";
+
+  console.log("→ Borrowers + facilities + financials + valuations + deals + identifiers");
   let dealCounter = 0;
   for (const row of book) {
     const rng = makeRng(row.name);
+    const n = book.indexOf(row) + 1;
+    const closed = row.stage === "Closed";
     const borrower = await db.borrower.create({
       data: {
         name: row.name,
@@ -176,6 +254,18 @@ async function main() {
         watchlist: row.watch,
       },
     });
+
+    await addInternalRef("borrower", borrower.id, ISSUER_IDS_FROM);
+    // An LEI arrives when a company first borrows through an agent: closed deals.
+    if (closed) {
+      await addIdentifier("borrower", borrower.id, "LEI", demoLei(n), { source: "GLEIF", validFrom: ISSUER_IDS_FROM });
+    }
+    if (!NO_BBG_COMPANY_ID.has(row.name)) {
+      await addIdentifier("borrower", borrower.id, "BBG_COMPANY", demoBbgCompany(n), {
+        source: "BLOOMBERG",
+        validFrom: ISSUER_IDS_FROM,
+      });
+    }
 
     // Two trailing financial periods for the portfolio view.
     for (const q of QUARTER_ENDS.slice(-3)) {
@@ -219,7 +309,7 @@ async function main() {
       },
     });
 
-    await db.facility.create({
+    const facility = await db.facility.create({
       data: {
         dealId: deal.id,
         borrowerId: borrower.id,
@@ -235,6 +325,41 @@ async function main() {
         maturity: D(2030, 1 + Math.floor(rng() * 11)),
       },
     });
+
+    // Facility identifiers accrue over its life: an internal ref at sourcing,
+    // the agent's reference at close, CUSIP/ISIN/LoanX if it is CUSIP'd.
+    await addInternalRef("facility", facility.id, deal.createdAt);
+    if (closed) {
+      const closeDate = deal.targetClose ?? deal.createdAt;
+      const code = deal.codeName.replace(/^Project /, "").toUpperCase();
+      const kind = row.facType === "Unitranche" ? "UNI" : "TLB";
+      await addIdentifier("facility", facility.id, "AGENT_FACILITY", `${code}-${kind}-1`, {
+        source: "AGENT_NOTICE",
+        namespace: AGENT,
+        validFrom: closeDate,
+      });
+      if (row.size >= CUSIP_MIN_SIZE) {
+        const cusip = demoCusip(n);
+        for (const [scheme, value, source] of [
+          ["CUSIP", cusip, "CUSIP_GLOBAL"],
+          ["ISIN", isinFor(cusip), "CUSIP_GLOBAL"],
+          ["LOANX", demoLoanX(n), "MARKIT"],
+        ] as const) {
+          await addIdentifier("facility", facility.id, scheme, value, { source, validFrom: closeDate });
+        }
+      }
+      if (row.name === AMEND_AND_EXTEND) {
+        // The A&E retired the original LoanX ID; both are kept so marks taken
+        // before the amendment still resolve to the tranche they were for.
+        const amended = addMonths(closeDate, 9);
+        await addIdentifier("facility", facility.id, "LOANX", demoLoanX(n), {
+          source: "MARKIT",
+          validFrom: closeDate,
+          validTo: amended,
+        });
+        await addIdentifier("facility", facility.id, "LOANX", demoLoanX(n + 50), { source: "MARKIT", validFrom: amended });
+      }
+    }
 
     // Valuation for closed positions.
     if (row.stage === "Closed") {
@@ -367,6 +492,14 @@ async function seedFlagship(
     },
   });
 
+  // Number 15: after the fourteen names in the main book.
+  await addInternalRef("borrower", borrower.id, ISSUER_IDS_FROM);
+  await addIdentifier("borrower", borrower.id, "LEI", demoLei(15), { source: "GLEIF", validFrom: ISSUER_IDS_FROM });
+  await addIdentifier("borrower", borrower.id, "BBG_COMPANY", demoBbgCompany(15), {
+    source: "BLOOMBERG",
+    validFrom: ISSUER_IDS_FROM,
+  });
+
   // 8 quarters actual + 4 projected.
   const baseEbitda = 36;
   for (let i = 0; i < QUARTER_ENDS.length; i++) {
@@ -449,6 +582,10 @@ async function seedFlagship(
       { dealId: deal.id, borrowerId: borrower.id, name: "Revolving Credit Facility", type: "Revolver", seniority: "First Lien", commitment: 15, funded: 0, spreadBps: 550, floorBps: 100, oidPct: 0, pikBps: 0, upfrontFeeBps: 50, maturity: D(2031, 7), order: 2 },
     ],
   });
+  // Still at IC, so internal refs only: no agent reference, CUSIP or LoanX yet.
+  for (const f of await db.facility.findMany({ where: { dealId: deal.id }, orderBy: { order: "asc" } })) {
+    await addInternalRef("facility", f.id, deal.createdAt);
+  }
 
   // Team (wall-crossed deal team).
   await db.dealTeamMember.createMany({

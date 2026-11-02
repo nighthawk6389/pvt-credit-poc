@@ -9,19 +9,21 @@ import { can } from "@/lib/auth/roles";
 import { Button } from "@/components/ui/button";
 import { recordFundamentals, runReconciliation } from "@/server/actions/covenant-ops";
 
-export function SuiteActions({ dealId, borrowerId }: { dealId: string; borrowerId: string }) {
+export function SuiteActions({ dealId }: { dealId: string }) {
   const { role } = useRole();
   const [pending, start] = React.useTransition();
   const [busy, setBusy] = React.useState<string | null>(null);
 
   if (!can(role, "edit", "covenant")) return null;
 
-  function run(label: string, fn: () => Promise<unknown>) {
+  /** `fn` may return a message to show instead of the generic success toast. */
+  function run(label: string, fn: () => Promise<{ info: string } | { success: string } | void>) {
     setBusy(label);
     start(async () => {
       try {
-        await fn();
-        toast.success(`${label} complete`);
+        const outcome = await fn();
+        if (outcome && "info" in outcome) toast.info(outcome.info);
+        else toast.success(outcome?.success ?? `${label} complete`);
       } catch (e) {
         toast.error((e as Error).message);
       } finally {
@@ -36,7 +38,14 @@ export function SuiteActions({ dealId, borrowerId }: { dealId: string; borrowerI
         variant="outline"
         size="sm"
         disabled={pending}
-        onClick={() => run("Bloomberg refresh", () => recordFundamentals(dealId, borrowerId))}
+        onClick={() =>
+          run("Bloomberg refresh", async () => {
+            const r = await recordFundamentals(dealId);
+            return r.coverage === "none"
+              ? { info: `No Bloomberg coverage for ${r.borrower}: no Bloomberg company ID or LEI on file. Covenants run off compliance-certificate figures.` }
+              : { success: `Pulled ${r.fields} fundamental fields via ${r.issuer}` };
+          })
+        }
       >
         {busy === "Bloomberg refresh" ? <Loader2 className="size-4 animate-spin" /> : <Database className="size-4" />}
         Pull FA fundamentals

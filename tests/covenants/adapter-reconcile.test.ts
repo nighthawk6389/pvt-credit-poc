@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { MockBloombergClient } from "@/lib/bloomberg/client";
-import type { FundamentalAnchor } from "@/lib/bloomberg/types";
+import type { FundamentalAnchor, IssuerKey } from "@/lib/bloomberg/types";
 import { evaluate, reconcile } from "@/lib/covenants/index";
 import { makeDef, NET_LEVERAGE } from "./helpers";
 
 // Zero-latency client so tests are fast and never time-dependent. The numbers
-// are fully deterministic (seeded by borrower+periodEnd), independent of latency.
+// are fully deterministic (seeded by issuer identifier + periodEnd), independent of latency.
 const bloomberg = new MockBloombergClient(0);
 
 const ANCHOR: FundamentalAnchor = {
@@ -14,7 +14,7 @@ const ANCHOR: FundamentalAnchor = {
   interestCoverage: 2.2,
   liquidity: 30,
 };
-const BORROWER = "Project Atlas";
+const ISSUER: IssuerKey = { scheme: "BBG_COMPANY", value: "999900015", name: "Meridian Health Partners" };
 const PERIOD = "2025-12-31";
 
 // Area 4: adapter back-solve and the engine must AGREE on leverage. The mock
@@ -24,7 +24,7 @@ const PERIOD = "2025-12-31";
 describe("adapter back-solve ↔ engine reconciliation coherence", () => {
   it("recomputed leverage from FA fields matches the reported anchor within tolerance", async () => {
     const fs = await bloomberg.getFundamentals({
-      borrower: BORROWER,
+      issuer: ISSUER,
       periodEnd: PERIOD,
       anchor: ANCHOR,
     });
@@ -47,7 +47,7 @@ describe("adapter back-solve ↔ engine reconciliation coherence", () => {
 
   it("interest coverage recomputed from FA fields agrees with the reported anchor", async () => {
     const fs = await bloomberg.getFundamentals({
-      borrower: BORROWER,
+      issuer: ISSUER,
       periodEnd: PERIOD,
       anchor: ANCHOR,
     });
@@ -64,7 +64,7 @@ describe("adapter back-solve ↔ engine reconciliation coherence", () => {
 
   it("minimum liquidity recomputed from FA fields agrees with the reported anchor", async () => {
     const fs = await bloomberg.getFundamentals({
-      borrower: BORROWER,
+      issuer: ISSUER,
       periodEnd: PERIOD,
       anchor: ANCHOR,
     });
@@ -81,15 +81,15 @@ describe("adapter back-solve ↔ engine reconciliation coherence", () => {
   });
 
   it("is deterministic: two calls with identical inputs return identical fields", async () => {
-    const a = await bloomberg.getFundamentals({ borrower: BORROWER, periodEnd: PERIOD, anchor: ANCHOR });
-    const b = await bloomberg.getFundamentals({ borrower: BORROWER, periodEnd: PERIOD, anchor: ANCHOR });
+    const a = await bloomberg.getFundamentals({ issuer: ISSUER, periodEnd: PERIOD, anchor: ANCHOR });
+    const b = await bloomberg.getFundamentals({ issuer: ISSUER, periodEnd: PERIOD, anchor: ANCHOR });
     expect(b.fields).toEqual(a.fields);
   });
 
   it("analyst overrides flow through to the engine recompute", async () => {
-    const base = await bloomberg.getFundamentals({ borrower: BORROWER, periodEnd: PERIOD, anchor: ANCHOR });
+    const base = await bloomberg.getFundamentals({ issuer: ISSUER, periodEnd: PERIOD, anchor: ANCHOR });
     const over = await bloomberg.getFundamentals({
-      borrower: BORROWER,
+      issuer: ISSUER,
       periodEnd: PERIOD,
       anchor: ANCHOR,
       overrides: { EBITDA_ADJ: base.fields.EBITDA_ADJ + 5 }, // +5 of EBITDA add-backs
@@ -106,7 +106,7 @@ describe("adapter back-solve ↔ engine reconciliation coherence", () => {
 describe("break-even EBITDA solver round-trips against evaluate", () => {
   it("the solved EBITDA is below current and drives headroom to ~0 when substituted back", async () => {
     const fs = await bloomberg.getFundamentals({
-      borrower: BORROWER,
+      issuer: ISSUER,
       periodEnd: PERIOD,
       anchor: ANCHOR,
     });
@@ -140,5 +140,26 @@ describe("break-even EBITDA solver round-trips against evaluate", () => {
     // No EBITDA_ADJ in facts → solver has no monotone variable to bracket.
     const r = evaluate(def, { CASH: 24, RCF_AVAILABLE: 20 }, new Date(PERIOD));
     expect(r.breakevenEbitda).toBeNull();
+  });
+});
+
+// The Bloomberg key used to be whatever string a caller passed: the deal ID in
+// one place, the borrower's name in another. A real client looks a company up
+// by identifier, so the mock must too — a rename is not a different company,
+// and two companies sharing a name are not the same one.
+describe("Bloomberg requests are keyed by identifier, not name", () => {
+  it("returns the same fundamentals after the issuer is renamed", async () => {
+    const before = await bloomberg.getFundamentals({ issuer: ISSUER, periodEnd: PERIOD });
+    const renamed = await bloomberg.getFundamentals({
+      issuer: { ...ISSUER, name: "Meridian Health Partners Holdings, LLC" },
+      periodEnd: PERIOD,
+    });
+    expect(renamed.fields).toEqual(before.fields);
+  });
+
+  it("returns different fundamentals for a different company with the same name", async () => {
+    const a = await bloomberg.getFundamentals({ issuer: ISSUER, periodEnd: PERIOD });
+    const b = await bloomberg.getFundamentals({ issuer: { ...ISSUER, value: "999900016" }, periodEnd: PERIOD });
+    expect(b.fields).not.toEqual(a.fields);
   });
 });

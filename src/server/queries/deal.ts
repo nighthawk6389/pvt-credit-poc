@@ -28,7 +28,7 @@ export async function getDealOverview(id: string) {
         },
       },
       sponsor: true,
-      facilities: { orderBy: { order: "asc" } },
+      facilities: { orderBy: { order: "asc" }, include: { identifiers: true } },
       team: { include: { user: true } },
       tasks: { orderBy: { dueDate: "asc" }, include: { assignee: true } },
       notes: { orderBy: { createdAt: "desc" }, include: { author: true } },
@@ -92,9 +92,12 @@ export async function getStructuring(id: string) {
   return db.deal.findUnique({
     where: { id },
     include: {
-      facilities: { orderBy: { order: "asc" } },
+      facilities: { orderBy: { order: "asc" }, include: { identifiers: true } },
       borrower: {
-        include: { financials: { orderBy: { periodEnd: "desc" }, take: 1 } },
+        include: {
+          financials: { orderBy: { periodEnd: "desc" }, take: 1 },
+          identifiers: true,
+        },
       },
       sponsor: true,
     },

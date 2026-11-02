@@ -3,6 +3,18 @@
 // a future BloombergApiClient (BLPAPI / Data License) would implement the
 // same interface so callers never change.
 
+/**
+ * Which company an issuer-level request (FA, DRSK, CRPR) is about. Resolved
+ * from the borrower's stored identifiers by `pickIssuerKey`, never from its
+ * name: names are not unique, and they change.
+ */
+export interface IssuerKey {
+  scheme: "BBG_COMPANY" | "LEI";
+  value: string;
+  /** Display only. Never used to look anything up. */
+  name: string;
+}
+
 /** DLEN — Private Direct Lending comps. */
 export interface DirectLendingComp {
   borrower: string;
@@ -29,7 +41,7 @@ export interface PortfolioRisk {
 
 /** DRSK — Default Risk. */
 export interface DefaultRisk {
-  borrower: string;
+  issuer: IssuerKey;
   oneYrPdPct: number;
   fiveYrPdPct: number;
   impliedRating: string;
@@ -39,7 +51,7 @@ export interface DefaultRisk {
 
 /** CRPR — Credit Profile / ratings. */
 export interface CreditProfile {
-  borrower: string;
+  issuer: IssuerKey;
   agencyRatings: { agency: string; rating: string; outlook: string }[];
   internalRating: string;
   spreadToBenchmarkBps: number;
@@ -60,7 +72,7 @@ export interface StructuringQuote {
 
 /** FA <GO> — standardized fundamental field set for a borrower/period. */
 export interface FundamentalSet {
-  borrower: string;
+  issuer: IssuerKey;
   periodEnd: string; // ISO
   periodType: "Q" | "A" | "LTM";
   fields: Record<string, number>; // mnemonic → value ($MM unless % / x)
@@ -86,7 +98,7 @@ export interface BloombergClient {
    * recompute coherent; `overrides` apply field-level analyst overrides.
    */
   getFundamentals(input: {
-    borrower: string;
+    issuer: IssuerKey;
     periodEnd: string;
     periodType?: "Q" | "A" | "LTM";
     anchor?: FundamentalAnchor;
@@ -97,12 +109,14 @@ export interface BloombergClient {
     positions: { sector: string; spreadBps: number; leverage: number; yieldPct: number; size: number; rating?: string }[];
   }): Promise<PortfolioRisk>;
   /** DRSK <GO> */
-  getDefaultRisk(borrower: string, leverage?: number): Promise<DefaultRisk>;
+  getDefaultRisk(issuer: IssuerKey, leverage?: number): Promise<DefaultRisk>;
   /** CRPR <GO> */
-  getCreditProfile(borrower: string, internalRating?: string): Promise<CreditProfile>;
-  /** Structuring scenarios */
+  getCreditProfile(issuer: IssuerKey, internalRating?: string): Promise<CreditProfile>;
+  /**
+   * Structuring scenarios. Prices our own proposed terms, so it identifies no
+   * issuer and needs no Bloomberg coverage.
+   */
   runStructuringScenarios(input: {
-    borrower: string;
     spreadBps: number;
     floorBps: number;
     oidPct: number;

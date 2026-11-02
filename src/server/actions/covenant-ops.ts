@@ -19,6 +19,8 @@ import {
 } from "@/lib/covenants";
 import { guard, logActivity } from "./helpers";
 import { buildFactMaps } from "@/server/queries/covenants";
+import { getIssuerKey } from "@/server/queries/identifiers";
+import { SCHEME_SPECS } from "@/lib/identifiers";
 
 function bust(dealId: string) {
   revalidatePath(`/deals/${dealId}/covenants`);
@@ -91,10 +93,29 @@ export async function deleteCovenantDefinition(dealId: string, definitionId: str
   bust(dealId);
 }
 
+export type FundamentalsRefresh =
+  | { coverage: "bloomberg"; fields: number; issuer: string }
+  | { coverage: "none"; borrower: string };
+
 /** Pull fundamentals from Bloomberg (anchored to reported financials) and
- *  persist them as FundamentalFacts for every actual period. */
-export async function recordFundamentals(dealId: string, borrowerId: string) {
+ *  persist them as FundamentalFacts for every actual period.
+ *
+ *  The borrower is taken from the deal on the server rather than trusted from
+ *  the client, and Bloomberg is asked by the borrower's identifier. A borrower
+ *  with no identifier Bloomberg can resolve gets `coverage: "none"` and no
+ *  writes: its covenants keep running off compliance-certificate figures. */
+export async function recordFundamentals(dealId: string): Promise<FundamentalsRefresh> {
   const { actorId, role } = await guard("edit", "covenant");
+  const deal = await db.deal.findUnique({
+    where: { id: dealId },
+    select: { borrowerId: true, borrower: { select: { name: true } } },
+  });
+  if (!deal) throw new Error("Deal not found");
+  const { borrowerId } = deal;
+
+  const issuer = await getIssuerKey(borrowerId);
+  if (!issuer) return { coverage: "none", borrower: deal.borrower.name };
+
   const fins = await db.financialStatement.findMany({
     where: { borrowerId, isActual: true },
     orderBy: { periodEnd: "asc" },
@@ -102,7 +123,7 @@ export async function recordFundamentals(dealId: string, borrowerId: string) {
   let count = 0;
   for (const fin of fins) {
     const set = await bloomberg.getFundamentals({
-      borrower: dealId,
+      issuer,
       periodEnd: fin.periodEnd.toISOString(),
       anchor: {
         ebitda: fin.ebitda,
@@ -129,6 +150,7 @@ export async function recordFundamentals(dealId: string, borrowerId: string) {
   }
   await logActivity(dealId, actorId, role, `refreshed ${count} Bloomberg fundamental fields`, "FA");
   bust(dealId);
+  return { coverage: "bloomberg", fields: count, issuer: `${SCHEME_SPECS[issuer.scheme].label} ${issuer.value}` };
 }
 
 export async function overrideFundamental(

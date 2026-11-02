@@ -1,8 +1,10 @@
 import { notFound } from "next/navigation";
-import { TrendingUp, Activity, Star } from "lucide-react";
+import { TrendingUp, Activity, Star, SearchX } from "lucide-react";
 
 import { getStructuring } from "@/server/queries/deal";
 import { bloomberg } from "@/lib/bloomberg/client";
+import { pickIssuerKey, SCHEME_SPECS } from "@/lib/identifiers";
+import type { IssuerKey } from "@/lib/bloomberg/types";
 import { fmtMM, fmtSpread, fmtPct, fmtX, fmtDate } from "@/lib/utils";
 import {
   Card,
@@ -36,18 +38,22 @@ export default async function StructuringPage({
   const lead = deal.facilities[0];
   const leverage = fin?.netLeverage ?? 4.4;
 
+  // Issuer-level Bloomberg data (DRSK, CRPR) needs an identifier Bloomberg
+  // can resolve; without one the borrower has no coverage. Comps and the
+  // structuring scenarios work off sector and our own terms, so they always run.
+  const issuer = pickIssuerKey(deal.borrower.identifiers, deal.borrower.name);
+
   // Bloomberg analytics (simulated adapter).
   const [comps, scenarios, drsk, crpr] = await Promise.all([
     bloomberg.getDirectLendingComps(deal.borrower.sector),
     bloomberg.runStructuringScenarios({
-      borrower: deal.borrower.name,
       spreadBps: lead?.spreadBps ?? 575,
       floorBps: lead?.floorBps ?? 100,
       oidPct: lead?.oidPct ?? 1,
       leverage,
     }),
-    bloomberg.getDefaultRisk(deal.borrower.name, leverage),
-    bloomberg.getCreditProfile(deal.borrower.name, "3"),
+    issuer ? bloomberg.getDefaultRisk(issuer, leverage) : null,
+    issuer ? bloomberg.getCreditProfile(issuer, "3") : null,
   ]);
 
   // Sources & uses (illustrative).
@@ -208,67 +214,105 @@ export default async function StructuringPage({
       {/* Risk panels */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <BloombergPanel fn="DRSK" title="Default Risk">
-          <div className="grid grid-cols-2 gap-4">
-            <RiskMetric
-              icon={<Activity className="size-4" />}
-              label="1Y Default Prob."
-              value={fmtPct(drsk.oneYrPdPct)}
-            />
-            <RiskMetric
-              icon={<TrendingUp className="size-4" />}
-              label="Implied Rating"
-              value={drsk.impliedRating}
-            />
-            <RiskMetric label="5Y Default Prob." value={fmtPct(drsk.fiveYrPdPct)} />
-            <RiskMetric label="Distance to Default" value={`${drsk.distanceToDefault}σ`} />
-          </div>
-          <div className="mt-3 flex items-center gap-2 text-xs">
-            <span className="text-muted-foreground">Trend:</span>
-            <Badge
-              variant={
-                drsk.trend === "Improving"
-                  ? "success"
-                  : drsk.trend === "Deteriorating"
-                    ? "danger"
-                    : "muted"
-              }
-            >
-              {drsk.trend}
-            </Badge>
-          </div>
+          {!drsk ? (
+            <NoCoverage borrower={deal.borrower.name} />
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-4">
+                <RiskMetric
+                  icon={<Activity className="size-4" />}
+                  label="1Y Default Prob."
+                  value={fmtPct(drsk.oneYrPdPct)}
+                />
+                <RiskMetric
+                  icon={<TrendingUp className="size-4" />}
+                  label="Implied Rating"
+                  value={drsk.impliedRating}
+                />
+                <RiskMetric label="5Y Default Prob." value={fmtPct(drsk.fiveYrPdPct)} />
+                <RiskMetric label="Distance to Default" value={`${drsk.distanceToDefault}σ`} />
+              </div>
+              <div className="mt-3 flex items-center gap-2 text-xs">
+                <span className="text-muted-foreground">Trend:</span>
+                <Badge
+                  variant={
+                    drsk.trend === "Improving"
+                      ? "success"
+                      : drsk.trend === "Deteriorating"
+                        ? "danger"
+                        : "muted"
+                  }
+                >
+                  {drsk.trend}
+                </Badge>
+              </div>
+              <IssuerCaption issuer={drsk.issuer} />
+            </>
+          )}
         </BloombergPanel>
 
         <BloombergPanel fn="CRPR" title="Credit Profile">
-          <div className="space-y-2">
-            {crpr.agencyRatings.map((r) => (
-              <div
-                key={r.agency}
-                className="flex items-center justify-between text-sm"
-              >
-                <span className="text-muted-foreground">{r.agency}</span>
-                <div className="flex items-center gap-2">
-                  <span className="font-medium tabular-nums">{r.rating}</span>
-                  <Badge variant="muted" className="text-[9px]">
-                    {r.outlook}
-                  </Badge>
+          {!crpr ? (
+            <NoCoverage borrower={deal.borrower.name} />
+          ) : (
+            <div className="space-y-2">
+              {crpr.agencyRatings.map((r) => (
+                <div
+                  key={r.agency}
+                  className="flex items-center justify-between text-sm"
+                >
+                  <span className="text-muted-foreground">{r.agency}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium tabular-nums">{r.rating}</span>
+                    <Badge variant="muted" className="text-[9px]">
+                      {r.outlook}
+                    </Badge>
+                  </div>
                 </div>
+              ))}
+              <div className="flex items-center justify-between border-t border-border/50 pt-2 text-sm">
+                <span className="flex items-center gap-1.5 text-muted-foreground">
+                  <Star className="size-3.5" />
+                  Internal rating
+                </span>
+                <span className="font-medium">{crpr.internalRating}/7</span>
               </div>
-            ))}
-            <div className="flex items-center justify-between border-t border-border/50 pt-2 text-sm">
-              <span className="flex items-center gap-1.5 text-muted-foreground">
-                <Star className="size-3.5" />
-                Internal rating
-              </span>
-              <span className="font-medium">{crpr.internalRating}/7</span>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Spread to benchmark</span>
+                <span className="font-medium tabular-nums">
+                  {fmtSpread(crpr.spreadToBenchmarkBps)}
+                </span>
+              </div>
+              <IssuerCaption issuer={crpr.issuer} />
             </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Spread to benchmark</span>
-              <span className="font-medium tabular-nums">
-                {fmtSpread(crpr.spreadToBenchmarkBps)}
-              </span>
-            </div>
-          </div>
+          )}
         </BloombergPanel>
+      </div>
+    </div>
+  );
+}
+
+/** Says which identifier the figures were requested by, so they can be traced. */
+function IssuerCaption({ issuer }: { issuer: IssuerKey }) {
+  return (
+    <div className="text-muted-foreground mt-3 border-t border-border/50 pt-2 font-mono text-[10px]">
+      requested by {SCHEME_SPECS[issuer.scheme].label} {issuer.value}
+    </div>
+  );
+}
+
+/** No Bloomberg coverage is a normal state for a private borrower, not an error. */
+function NoCoverage({ borrower }: { borrower: string }) {
+  return (
+    <div className="flex items-start gap-2.5 text-sm">
+      <SearchX className="text-muted-foreground mt-0.5 size-4 shrink-0" />
+      <div>
+        <div className="font-medium">No Bloomberg coverage</div>
+        <p className="text-muted-foreground text-xs">
+          {borrower}{" "}
+          has no Bloomberg company ID or LEI on file, so there is nothing to request this by. Add one to
+          the borrower&apos;s identifiers once it exists; until then, rely on the compliance certificate.
+        </p>
       </div>
     </div>
   );

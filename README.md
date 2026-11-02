@@ -73,7 +73,10 @@ Writes are now durable and shared across all serverless instances.
 
 ## Architecture
 - `src/app/(app)/*` — dashboard, pipeline, deal workspace, portfolio, covenants, sponsors, compliance
-- `src/lib/bloomberg/*` — simulated Bloomberg adapter (DLEN / PORT / DRSK / CRPR / structuring), swappable for BLPAPI
+- `src/lib/bloomberg/*` — simulated Bloomberg adapter (DLEN / PORT / DRSK / CRPR / structuring), swappable for BLPAPI.
+  Issuer-level calls take an `IssuerKey` resolved from stored identifiers, never a name
+- `src/lib/identifiers/*` — CUSIP / ISIN / LEI / FIGI check digits, normalisation and validation,
+  and the resolution of a borrower to the identifier Bloomberg knows it by
 - `src/lib/copilot/*` — mocked, real-ready AI copilot (doc Q&A, memo drafting, covenant extraction)
 - `src/lib/auth/*` — identity & access: `session.ts` is the data access layer
   (cached, server-only) resolving the acting `User` + `OrgMembership`; `roles.ts`

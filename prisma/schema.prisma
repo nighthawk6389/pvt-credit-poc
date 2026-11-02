@@ -28,7 +28,7 @@ model Sponsor {
 }
 
 model Borrower {
-  id                String               @id @default(cuid())
+  id                String                 @id @default(cuid())
   name              String
   sector            String
   description       String?
@@ -37,17 +37,18 @@ model Borrower {
   ceo               String?
   founded           Int?
   sponsorId         String?
-  sponsor           Sponsor?             @relation(fields: [sponsorId], references: [id])
+  sponsor           Sponsor?               @relation(fields: [sponsorId], references: [id])
   deals             Deal[]
   facilities        Facility[]
   financials        FinancialStatement[]
   valuations        Valuation[]
   fundamentals      FundamentalFact[]
   ebitdaAdjustments EbitdaAdjustment[]
+  identifiers       InstrumentIdentifier[]
   riskRating        String? // internal 1-7 scale
   riskTrend         String? // "Improving" | "Stable" | "Deteriorating"
-  watchlist         Boolean              @default(false)
-  createdAt         DateTime             @default(now())
+  watchlist         Boolean                @default(false)
+  createdAt         DateTime               @default(now())
 }
 
 model Deal {
@@ -86,23 +87,24 @@ model Deal {
 }
 
 model Facility {
-  id            String    @id @default(cuid())
+  id            String                 @id @default(cuid())
   dealId        String
-  deal          Deal      @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  deal          Deal                   @relation(fields: [dealId], references: [id], onDelete: Cascade)
   borrowerId    String?
-  borrower      Borrower? @relation(fields: [borrowerId], references: [id])
+  borrower      Borrower?              @relation(fields: [borrowerId], references: [id])
   name          String
   type          String // Unitranche|Revolver|FirstLienTL|DelayedDraw|SecondLien
   seniority     String // First Lien|Second Lien|Unsecured
   commitment    Float // $MM
-  funded        Float     @default(0)
+  funded        Float                  @default(0)
   spreadBps     Int
-  floorBps      Int       @default(100)
-  oidPct        Float     @default(0)
-  pikBps        Int       @default(0)
-  upfrontFeeBps Int       @default(0)
+  floorBps      Int                    @default(100)
+  oidPct        Float                  @default(0)
+  pikBps        Int                    @default(0)
+  upfrontFeeBps Int                    @default(0)
   maturity      DateTime?
-  order         Int       @default(0)
+  order         Int                    @default(0)
+  identifiers   InstrumentIdentifier[]
 }
 
 model DealTeamMember {
@@ -441,15 +443,16 @@ model User {
 
   memberships       OrgMembership[]
   dealRoles         DealTeamMember[]
-  sponsorsCovered   Sponsor[]        @relation("SponsorCoverage")
-  dealsLed          Deal[]           @relation("DealLead")
+  sponsorsCovered   Sponsor[]              @relation("SponsorCoverage")
+  dealsLed          Deal[]                 @relation("DealLead")
   documentsUploaded Document[]
   ddqAssignments    DDQItem[]
-  tasksAssigned     Task[]           @relation("TaskAssignee")
+  tasksAssigned     Task[]                 @relation("TaskAssignee")
   notes             Note[]
   icVotes           ICVote[]
   eventsCreated     LifecycleEvent[]
   activity          ActivityLog[]
+  idsVerified       InstrumentIdentifier[]
 }
 
 model OrgMembership {
@@ -464,4 +467,47 @@ model OrgMembership {
 
   @@unique([orgId, userId])
   @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Instrument identifiers. The real-world names of borrowers and facilities:
+// CUSIP, ISIN, LoanX, FIGI, LEI, the Bloomberg company ID, the agent's own
+// facility reference. They are optional, plural and change over time — a
+// tranche picks them up as it closes and trades, and an amend-and-extend
+// retires one and issues another — so they live in their own effective-dated
+// table rather than as nullable columns. Validated and normalised by
+// src/lib/identifiers before they are written.
+//
+// Two rules Prisma cannot express are enforced in the migration instead:
+//   - exactly one of borrowerId / facilityId is set (CHECK);
+//   - a live identifier (validTo IS NULL) names one thing only, and a target
+//     has at most one live value per scheme (partial unique indexes).
+// ─────────────────────────────────────────────────────────────────────────
+
+model InstrumentIdentifier {
+  id           String    @id @default(cuid())
+  borrowerId   String?
+  borrower     Borrower? @relation(fields: [borrowerId], references: [id], onDelete: Cascade)
+  facilityId   String?
+  facility     Facility? @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  /// INTERNAL | LEI | BBG_COMPANY | CIK | CUSIP | ISIN | FIGI | LOANX | AGENT_FACILITY | CLEARPAR | WSO | OTHER
+  scheme       String
+  /// Normalised: upper-case, separators removed.
+  value        String
+  /// Issuer, for schemes unique only inside one system (agent, WSO instance).
+  /// Empty rather than NULL so it takes part in the uniqueness rule.
+  namespace    String    @default("")
+  validFrom    DateTime  @default(now())
+  /// Set when the identifier is retired; the row is kept for history.
+  validTo      DateTime?
+  /// INTERNAL | AGENT_NOTICE | BLOOMBERG | MARKIT | CUSIP_GLOBAL | GLEIF | SEC | MANUAL
+  source       String
+  verifiedById String?
+  verifiedBy   User?     @relation(fields: [verifiedById], references: [id])
+  verifiedAt   DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([scheme, value])
+  @@index([borrowerId])
+  @@index([facilityId])
 }

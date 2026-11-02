@@ -1,4 +1,5 @@
 import { fmtMM, fmtSpread } from "@/lib/utils";
+import { forDisplay, isIdScheme, SCHEME_SPECS, type StoredIdentifier } from "@/lib/identifiers";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -19,7 +20,25 @@ type Facility = {
   floorBps: number;
   oidPct: number;
   pikBps: number;
+  /** When present, the facility's live identifiers are shown under its name. */
+  identifiers?: StoredIdentifier[];
 };
+
+/** The identifiers people quote for a facility, e.g. "CUSIP 53621LAB5". */
+function FacilityIdentifiers({ rows }: { rows: StoredIdentifier[] }) {
+  const live = forDisplay(rows);
+  if (live.length === 0) return null;
+  return (
+    <div className="mt-1 flex flex-wrap gap-x-2.5 gap-y-0.5 font-mono text-[10px]">
+      {live.map((r) => (
+        <span key={`${r.scheme}:${r.namespace}:${r.value}`} title={r.namespace || undefined}>
+          <span className="text-muted-foreground">{isIdScheme(r.scheme) ? SCHEME_SPECS[r.scheme].label : r.scheme}</span>{" "}
+          {r.value}
+        </span>
+      ))}
+    </div>
+  );
+}
 
 export function CapitalStructure({
   facilities,
@@ -60,6 +79,7 @@ export function CapitalStructure({
                     </Badge>
                   )}
                 </div>
+                {f.identifiers && <FacilityIdentifiers rows={f.identifiers} />}
               </TableCell>
               <TableCell className="text-right font-medium tabular-nums">
                 {fmtMM(f.commitment, 0)}

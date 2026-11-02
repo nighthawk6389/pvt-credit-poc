@@ -50,7 +50,7 @@ export default async function CovenantOverviewPage({
             reconciled to the borrower&apos;s compliance certificate.
           </p>
         </div>
-        <SuiteActions dealId={deal.id} borrowerId={deal.borrowerId} />
+        <SuiteActions dealId={deal.id} />
       </div>
 
       {/* Summary */}

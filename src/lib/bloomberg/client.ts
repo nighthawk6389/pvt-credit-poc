@@ -4,11 +4,12 @@ import type {
   DefaultRisk,
   DirectLendingComp,
   FundamentalSet,
+  IssuerKey,
   PortfolioRisk,
   StructuringQuote,
 } from "./types";
 
-// Deterministic pseudo-random from a string seed so the same borrower/sector
+// Deterministic pseudo-random from a string seed so the same issuer/sector
 // always returns the same numbers (stable demos & screenshots).
 function hash(str: string): number {
   let h = 2166136261;
@@ -50,6 +51,9 @@ const COMP_BORROWERS = [
 const AGENCIES = ["Moody's", "S&P", "Fitch"] as const;
 const OUTLOOKS = ["Stable", "Positive", "Negative"] as const;
 
+/** The mock seeds off the identifier, as a real client would look it up by it. */
+const keyOf = (issuer: IssuerKey) => `${issuer.scheme}:${issuer.value}`;
+
 /** Simulated Bloomberg adapter. Swap for a real BLPAPI/Data License client. */
 export class MockBloombergClient implements BloombergClient {
   private latencyMs: number;
@@ -63,14 +67,14 @@ export class MockBloombergClient implements BloombergClient {
   }
 
   async getFundamentals(input: {
-    borrower: string;
+    issuer: IssuerKey;
     periodEnd: string;
     periodType?: "Q" | "A" | "LTM";
     anchor?: import("./types").FundamentalAnchor;
     overrides?: Record<string, number>;
   }): Promise<FundamentalSet> {
     await this.delay();
-    const rng = seeded(`FA:${input.borrower}:${input.periodEnd}`);
+    const rng = seeded(`FA:${keyOf(input.issuer)}:${input.periodEnd}`);
     const a = input.anchor;
 
     // Back-solve a coherent field set from the reported anchor so the
@@ -112,7 +116,7 @@ export class MockBloombergClient implements BloombergClient {
     if (input.overrides) Object.assign(fields, input.overrides);
 
     return {
-      borrower: input.borrower,
+      issuer: input.issuer,
       periodEnd: input.periodEnd,
       periodType: input.periodType ?? "LTM",
       fields,
@@ -193,9 +197,9 @@ export class MockBloombergClient implements BloombergClient {
     };
   }
 
-  async getDefaultRisk(borrower: string, leverage = 4.5): Promise<DefaultRisk> {
+  async getDefaultRisk(issuer: IssuerKey, leverage = 4.5): Promise<DefaultRisk> {
     await this.delay();
-    const rng = seeded(`DRSK:${borrower}`);
+    const rng = seeded(`DRSK:${keyOf(issuer)}`);
     const base = Math.max(0.4, (leverage - 2) * 0.85 + rng() * 1.2);
     const oneYr = +base.toFixed(2);
     const ratings = ["BB-", "B+", "B", "B-", "CCC+"];
@@ -204,7 +208,7 @@ export class MockBloombergClient implements BloombergClient {
       Math.floor((leverage - 3) / 0.8) + Math.floor(rng() * 2),
     );
     return {
-      borrower,
+      issuer,
       oneYrPdPct: oneYr,
       fiveYrPdPct: +(oneYr * (3.4 + rng())).toFixed(2),
       impliedRating: ratings[Math.max(0, idx)],
@@ -214,21 +218,21 @@ export class MockBloombergClient implements BloombergClient {
   }
 
   async getCreditProfile(
-    borrower: string,
+    issuer: IssuerKey,
     internalRating = "4",
   ): Promise<CreditProfile> {
     await this.delay();
-    const rng = seeded(`CRPR:${borrower}`);
+    const rng = seeded(`CRPR:${keyOf(issuer)}`);
     const scales = ["Ba3", "B1", "B2", "B3", "Caa1"];
     const spScales = ["BB-", "B+", "B", "B-", "CCC+"];
     const base = Math.floor(rng() * 3) + 1;
     return {
-      borrower,
+      issuer,
       agencyRatings: AGENCIES.map((agency, i) => ({
         agency,
         rating:
           agency === "S&P" ? spScales[Math.min(4, base + i)] : scales[Math.min(4, base + i)],
-        outlook: pick(seeded(`${borrower}:${agency}`), [...OUTLOOKS]),
+        outlook: pick(seeded(`${keyOf(issuer)}:${agency}`), [...OUTLOOKS]),
       })),
       internalRating,
       spreadToBenchmarkBps: 30 + Math.floor(rng() * 90),
@@ -236,7 +240,6 @@ export class MockBloombergClient implements BloombergClient {
   }
 
   async runStructuringScenarios(input: {
-    borrower: string;
     spreadBps: number;
     floorBps: number;
     oidPct: number;

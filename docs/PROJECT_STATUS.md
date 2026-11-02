@@ -67,7 +67,15 @@ Cross-cutting characteristics:
   (`src/lib/bloomberg/`) and a `CopilotService` interface (`src/lib/copilot/`)
   are implemented by mocks today, but are architected so a real BLPAPI / Data
   License client and a Claude-backed copilot can be dropped in behind the same
-  contract.
+  contract. Issuer-level Bloomberg calls take an `IssuerKey` resolved from the
+  borrower's stored identifiers (Bloomberg company ID, then LEI), never a name.
+- **Instrument identifiers.** `InstrumentIdentifier` holds the real-world names
+  of borrowers and facilities — CUSIP, ISIN, LoanX, FIGI, LEI, Bloomberg company
+  ID, the agent's reference — as effective-dated rows. `src/lib/identifiers`
+  validates check digits (CUSIP, ISIN, LEI, FIGI) and normalises on write; the
+  migration enforces exactly one target and uniqueness among live values. A
+  borrower with no identifier Bloomberg can resolve has *no coverage*, which the
+  app treats as a normal state.
 - **Vercel-deployable with durable writes.** `vercel.json` runs
   `prisma migrate deploy` at build against a hosted Postgres; writes now persist
   and are shared across serverless instances. Seeding is deliberately manual,
@@ -186,10 +194,18 @@ rather than inventing numbers. It:
    independent recompute lands ~0.5–1.5% off the reported figure — i.e. it
    produces a small, realistic **recon delta** rather than diverging wildly.
 
-The RNG is seeded per `borrower:periodEnd`, so the same inputs always return the
-same fields. The action `recordFundamentals()` (`covenant-ops.ts`) walks every
-actual `FinancialStatement`, calls `getFundamentals` with the anchor, and
-persists each field as a `FundamentalFact(source="BBG")`.
+The RNG is seeded per issuer identifier and period end (`BBG_COMPANY:<id>:periodEnd`),
+so the same inputs always return the same fields, a renamed borrower gets the
+same numbers, and two borrowers sharing a name do not. The action
+`recordFundamentals(dealId)` (`covenant-ops.ts`) takes the borrower from the
+deal on the server, resolves its `IssuerKey`, walks every actual
+`FinancialStatement`, calls `getFundamentals` with the anchor, and persists each
+field as a `FundamentalFact(source="BBG")`. With no coverage it writes nothing
+and reports that covenants run off compliance-certificate figures.
+
+Before identifiers existed, this call was keyed on the **deal ID** while the
+structuring page keyed DRSK/CRPR on the **borrower name**, so one company
+resolved two different ways. Both now go through `pickIssuerKey`.
 
 ### 3.3 The four trigger types
 
@@ -359,7 +375,8 @@ src/
 │  │  ├─ types.ts  fields.ts  parser.ts  evaluate.ts
 │  │  ├─ schedule.ts  reconcile.ts  status.ts  forecast.ts
 │  │  ├─ json.ts   index.ts (barrel + toParsedDefinition)
-│  ├─ bloomberg/{client.ts,types.ts}   # anchored getFundamentals mock
+│  ├─ bloomberg/{client.ts,types.ts}   # anchored getFundamentals mock, keyed by IssuerKey
+│  ├─ identifiers/                # schemes, check digits, validation, issuer-key resolution
 │  ├─ copilot/{service.ts,types.ts}    # mocked AI extraction/copilot
 │  ├─ auth/{roles.ts,server.ts,context.tsx,constants.ts}
 │  └─ db.ts                       # Prisma client singleton (pooled)
@@ -482,6 +499,17 @@ overcure, test runner, Anthropic SDK, upload action):
   on `DealTeamMember` seats, so a Deal Lead sees every privileged deal rather
   than only the ones they are wall-crossed onto. The rows to do it properly now
   exist.
+- **Identifier management UI.** Identifiers are seeded, validated, displayed on
+  the capital-structure table and used for Bloomberg lookups, but there is no
+  form to add or retire one; today that is a database write. The validator and
+  the constraints are in place for it.
+- **Identifiers beyond borrowers and facilities.** The canonical model attaches
+  them to legal entities (LEI), positions (fund-admin IDs) and collateral (UCC-1
+  filings); the running app has none of those models yet.
+- **Overlapping retired date ranges.** The database enforces uniqueness among
+  *live* identifiers only. Stopping two *retired* ranges for the same value from
+  overlapping needs an exclusion constraint (`btree_gist`), which not every
+  hosted Postgres allows, so the write path is relied on instead.
 
 ---
 
