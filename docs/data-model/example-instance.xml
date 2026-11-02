@@ -4,6 +4,12 @@
   unitranche deal followed from origination through to a covenant test that
   trips the reconciliation flag, plus the fund position and mark it rolls up to.
 
+  The model is an overlay, so the borrower, sponsor, instruments and collateral
+  appear only as links: a masterRef into the entity master, security master or
+  collateral system. Their names and the loan's terms are not in this file —
+  they are read from those systems. The term sheet is here because it is the
+  record of what the committee approved, not because it holds live terms.
+
   Validate with xmllint, passing this file and the schema:
     xmllint (noout) (schema schema.canonical.xsd) example-instance.xml
   i.e. `xmllint` with the usual two long options, spelled out here without
@@ -67,43 +73,47 @@
     </OrgMembership>
   </OrgMemberships>
 
-  <!-- ── Counterparties ────────────────────────────────────────────────── -->
-  <Industries>
-    <Industry>
-      <id>ind_45102010</id>
-      <code>45102010</code>
-      <name>Application Software</name>
-    </Industry>
-  </Industries>
-
-  <Sponsors>
-    <Sponsor>
-      <id>spn_brightwater</id>
-      <orgId>org_lumen</orgId>
-      <name>Brightwater Capital</name>
-      <type>PE</type>
-      <aum>4200000000.0000</aum>
-      <currency>USD</currency>
-      <hqCity>Boston</hqCity>
-      <vintage>2011</vintage>
-    </Sponsor>
-  </Sponsors>
-
+  <!-- ── Links to systems of record ───────────────────────────────────── -->
+  <!-- Each row is only a pointer. "Arcline Systems", its industry, its owner
+       and its HQ are the entity master's to hold; the tranche's spread, floor,
+       OID and maturity are the security master's. -->
   <Companies>
     <Company>
-      <id>cmp_arcline</id>
-      <orgId>org_lumen</orgId>
-      <name>Arcline Systems</name>
-      <legalName>Arcline Systems Holdings, Inc.</legalName>
-      <sponsorId>spn_brightwater</sponsorId>
-      <industryId>ind_45102010</industryId>
-      <description>Workflow automation software for mid-market insurers.</description>
-      <hqCity>Denver</hqCity>
-      <country>US</country>
-      <foundedYear>2009</foundedYear>
+      <id>cmp_arcline</id><orgId>org_lumen</orgId>
+      <masterRef>EM-104233</masterRef>
       <createdAt>2025-11-04T00:00:00Z</createdAt>
     </Company>
   </Companies>
+
+  <Sponsors>
+    <Sponsor>
+      <id>spn_brightwater</id><orgId>org_lumen</orgId>
+      <masterRef>EM-000871</masterRef>
+      <createdAt>2024-02-12T00:00:00Z</createdAt>
+    </Sponsor>
+  </Sponsors>
+
+  <!-- Created when each tranche was booked at close. -->
+  <Instruments>
+    <Instrument>
+      <id>ins_arcline_uni</id><orgId>org_lumen</orgId>
+      <masterRef>SM-LN-55012</masterRef>
+      <createdAt>2026-01-28T00:00:00Z</createdAt>
+    </Instrument>
+    <Instrument>
+      <id>ins_arcline_ddtl</id><orgId>org_lumen</orgId>
+      <masterRef>SM-LN-55013</masterRef>
+      <createdAt>2026-01-28T00:00:00Z</createdAt>
+    </Instrument>
+  </Instruments>
+
+  <CollateralItems>
+    <Collateral>
+      <id>col_arcline_pkg</id><dealId>deal_arcline</dealId>
+      <masterRef>COL-88341</masterRef>
+      <createdAt>2026-01-20T00:00:00Z</createdAt>
+    </Collateral>
+  </CollateralItems>
 
   <!-- ── The deal ──────────────────────────────────────────────────────── -->
   <Deals>
@@ -128,64 +138,54 @@
     </Deal>
   </Deals>
 
+  <!-- ── The decision trail ──────────────────────────────────────────────── -->
+  <!-- The committee approved term sheet v2. That snapshot is the record of
+       what was approved; once the tranches booked, the security master took
+       over as the source of record for their terms. -->
+  <ICMeetings>
+    <ICMeeting>
+      <id>icm_2026_01_14</id>
+      <title>Investment Committee — 14 January 2026</title>
+      <heldAt>2026-01-14T15:00:00Z</heldAt>
+    </ICMeeting>
+  </ICMeetings>
+
+  <ICAgendaItems>
+    <ICAgendaItem>
+      <id>ica_lantern</id><meetingId>icm_2026_01_14</meetingId><dealId>deal_arcline</dealId>
+      <termSheetId>ts_lantern_v2</termSheetId>
+      <outcome>Approved, conditional on a 25% add-back cap</outcome>
+    </ICAgendaItem>
+  </ICAgendaItems>
+
   <Facilities>
     <Facility>
-      <id>fac_arcline_uni</id>
-      <dealId>deal_arcline</dealId>
-      <name>Senior Secured Unitranche</name>
-      <type>UNITRANCHE</type>
-      <seniority>FIRST_LIEN</seniority>
-      <currency>USD</currency>
-      <commitment>160000000.0000</commitment>
-      <fundedAmount>150000000.0000</fundedAmount>
-      <maturityOn>2032-01-28T00:00:00Z</maturityOn>
-      <tenorMonths>72</tenorMonths>
-      <order>0</order>
+      <id>fac_arcline_uni</id><dealId>deal_arcline</dealId>
+      <label>Unitranche</label><instrumentId>ins_arcline_uni</instrumentId>
+      <createdAt>2025-11-20T00:00:00Z</createdAt>
     </Facility>
     <Facility>
-      <id>fac_arcline_ddtl</id>
-      <dealId>deal_arcline</dealId>
-      <name>Delayed Draw Term Loan</name>
-      <type>DELAYED_DRAW</type>
-      <seniority>FIRST_LIEN</seniority>
-      <currency>USD</currency>
-      <commitment>25000000.0000</commitment>
-      <fundedAmount>0.0000</fundedAmount>
-      <maturityOn>2032-01-28T00:00:00Z</maturityOn>
-      <tenorMonths>72</tenorMonths>
-      <order>1</order>
+      <id>fac_arcline_ddtl</id><dealId>deal_arcline</dealId>
+      <label>DDTL</label><instrumentId>ins_arcline_ddtl</instrumentId>
+      <createdAt>2025-11-20T00:00:00Z</createdAt>
     </Facility>
   </Facilities>
 
-  <!-- Two pricing rows: original terms, then a repricing. History, not an
-       overwrite — the live terms are the latest effectiveFrom. -->
-  <FacilityPricings>
-    <FacilityPricing>
-      <id>prc_1</id>
-      <facilityId>fac_arcline_uni</facilityId>
-      <effectiveFrom>2026-01-28T00:00:00Z</effectiveFrom>
-      <baseRateCode>SOFR3M</baseRateCode>
-      <spreadBps>575</spreadBps>
-      <floorBps>100</floorBps>
-      <oidPct>2.0000</oidPct>
-      <pikBps>0</pikBps>
-      <upfrontFeeBps>200</upfrontFeeBps>
-      <unusedFeeBps>50</unusedFeeBps>
-    </FacilityPricing>
-    <FacilityPricing>
-      <id>prc_2</id>
-      <facilityId>fac_arcline_uni</facilityId>
-      <effectiveFrom>2026-07-01T00:00:00Z</effectiveFrom>
-      <baseRateCode>SOFR3M</baseRateCode>
-      <spreadBps>550</spreadBps>
-      <floorBps>100</floorBps>
-      <oidPct>0.0000</oidPct>
-      <pikBps>0</pikBps>
-      <upfrontFeeBps>0</upfrontFeeBps>
-      <unusedFeeBps>50</unusedFeeBps>
-      <reason>Margin ratchet: leverage below 4.50x for two consecutive tests.</reason>
-    </FacilityPricing>
-  </FacilityPricings>
+  <!-- v1 went out at S+600; the sponsor negotiated it to S+575 for v2. -->
+  <TermSheets>
+    <TermSheet>
+      <id>ts_lantern_v1</id><dealId>deal_arcline</dealId><versionNo>1</versionNo>
+      <terms>{"tranches":[{"label":"Unitranche","commitment":160000000,"spreadBps":600,"floorBps":100,"oidPct":2.0},{"label":"DDTL","commitment":25000000,"spreadBps":600,"tickingFeeBps":50}]}</terms>
+      <authorId>usr_okafor</authorId>
+      <createdAt>2025-12-02T00:00:00Z</createdAt>
+    </TermSheet>
+    <TermSheet>
+      <id>ts_lantern_v2</id><dealId>deal_arcline</dealId><versionNo>2</versionNo>
+      <terms>{"tranches":[{"label":"Unitranche","commitment":160000000,"spreadBps":575,"floorBps":100,"oidPct":2.0},{"label":"DDTL","commitment":25000000,"spreadBps":575,"tickingFeeBps":50}]}</terms>
+      <authorId>usr_okafor</authorId>
+      <createdAt>2026-01-09T00:00:00Z</createdAt>
+    </TermSheet>
+  </TermSheets>
 
   <!-- ── Governed field vocabulary the covenant formulas resolve against ── -->
   <FieldDefinitions>
@@ -333,7 +333,7 @@
     <Position>
       <id>pos_1</id>
       <fundId>fnd_lcp_iii</fundId>
-      <facilityId>fac_arcline_uni</facilityId>
+      <instrumentId>ins_arcline_uni</instrumentId>
       <currency>USD</currency>
       <parAmount>120000000.0000</parAmount>
       <fundedAmount>112500000.0000</fundedAmount>
@@ -388,9 +388,10 @@
   </Alerts>
 
   <!-- ── Identifiers: what the outside world calls these things ────────── -->
-  <!-- The company resolves on its Bloomberg ID; the unitranche picked up an
-       agent reference, a CUSIP (with the ISIN that embeds it) and a LoanX ID
-       when it closed. Synthetic but well-formed: the check digits are real. -->
+  <!-- Cross-references for matching third-party data to the links: the
+       borrower resolves on its Bloomberg ID; the unitranche picked up an agent
+       reference, a CUSIP (with the ISIN that embeds it) and a LoanX ID when it
+       closed. Synthetic but well-formed: the check digits are real. -->
   <InstrumentIdentifiers>
     <InstrumentIdentifier>
       <id>iid_1</id><orgId>org_lumen</orgId><companyId>cmp_arcline</companyId>
@@ -399,26 +400,26 @@
       <createdAt>2025-11-04T00:00:00Z</createdAt>
     </InstrumentIdentifier>
     <InstrumentIdentifier>
-      <id>iid_2</id><orgId>org_lumen</orgId><facilityId>fac_arcline_uni</facilityId>
+      <id>iid_2</id><orgId>org_lumen</orgId><instrumentId>ins_arcline_uni</instrumentId>
       <scheme>AGENT_FACILITY</scheme><value>LANTERN-UNI-1</value><namespace>LUMEN AGENCY SERVICES</namespace>
       <validFrom>2026-01-28T00:00:00Z</validFrom><source>AGENT_NOTICE</source>
       <createdAt>2026-01-28T00:00:00Z</createdAt>
     </InstrumentIdentifier>
     <InstrumentIdentifier>
-      <id>iid_3</id><orgId>org_lumen</orgId><facilityId>fac_arcline_uni</facilityId>
+      <id>iid_3</id><orgId>org_lumen</orgId><instrumentId>ins_arcline_uni</instrumentId>
       <scheme>CUSIP</scheme><value>LMN101AB5</value><namespace/>
       <validFrom>2026-01-28T00:00:00Z</validFrom><source>CUSIP_GLOBAL</source>
       <verifiedById>usr_reyes</verifiedById><verifiedAt>2026-01-29T10:00:00Z</verifiedAt>
       <createdAt>2026-01-28T00:00:00Z</createdAt>
     </InstrumentIdentifier>
     <InstrumentIdentifier>
-      <id>iid_4</id><orgId>org_lumen</orgId><facilityId>fac_arcline_uni</facilityId>
+      <id>iid_4</id><orgId>org_lumen</orgId><instrumentId>ins_arcline_uni</instrumentId>
       <scheme>ISIN</scheme><value>USLMN101AB52</value><namespace/>
       <validFrom>2026-01-28T00:00:00Z</validFrom><source>CUSIP_GLOBAL</source>
       <createdAt>2026-01-28T00:00:00Z</createdAt>
     </InstrumentIdentifier>
     <InstrumentIdentifier>
-      <id>iid_5</id><orgId>org_lumen</orgId><facilityId>fac_arcline_uni</facilityId>
+      <id>iid_5</id><orgId>org_lumen</orgId><instrumentId>ins_arcline_uni</instrumentId>
       <scheme>LOANX</scheme><value>LX900101</value><namespace/>
       <validFrom>2026-02-10T00:00:00Z</validFrom><source>MARKIT</source>
       <createdAt>2026-02-10T00:00:00Z</createdAt>

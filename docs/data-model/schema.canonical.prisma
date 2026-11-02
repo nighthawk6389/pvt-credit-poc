@@ -1,10 +1,14 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // CANONICAL DATA MODEL — Private Credit Deal Room & Dashboard
 // ═══════════════════════════════════════════════════════════════════════════
-// A clean-slate, reference model for everything a deal room dashboard needs:
-// identity & access, counterparties, pipeline, data room, structuring &
-// syndication, covenant monitoring, fund/position economics, and the
-// time-series history that dashboard analytics depend on.
+// A clean-slate reference model for a deal room and its dashboard. It is an
+// OVERLAY: it owns the workflow and the cross-cutting state — pipeline, team
+// and access, data room, committee decisions, covenant monitoring, fund
+// positions, alerts and the history dashboards trend — and it LINKS to the
+// systems of record for everything else. Borrowers, sponsors, advisors and
+// lenders live in the entity master; instruments and their loan terms in the
+// security master; collateral in the collateral system; market data with its
+// vendor. Those are read through links, never copied here.
 //
 // Target: PostgreSQL (native enums, Decimal money, partial/composite indexes).
 // This is a DESIGN ARTIFACT — it is intentionally separate from the running
@@ -14,12 +18,17 @@
 // Modeling rules applied throughout:
 //   1. Money is Decimal(20,4) — never Float. Ratios are Decimal(18,6).
 //   2. Anything a dashboard trends over time is an EVENT TABLE, not a mutable
-//      scalar (stage, rating, pricing, marks, document versions).
+//      scalar (stage, rating, marks, document versions). Term history such
+//      as repricings is the security master's, read through the link.
 //   3. Every actor is a User FK — no free-text name strings.
 //   4. Multi-tenant: root aggregates carry orgId.
-//   5. Amounts always travel with a currency; FX is a first-class table.
+//   5. Amounts always travel with a currency. FX rates are market data, read
+//      from the vendor at the time of the roll-up.
 //   6. Real-world identifiers (CUSIP, LoanX, LEI, …) are effective-dated rows
 //      in InstrumentIdentifier, never nullable columns on the thing they name.
+//   7. Systems of record are linked, never copied. A link row holds a local id
+//      (so foreign keys work), orgId and the record's masterRef — no names,
+//      descriptions, terms or valuations of the thing it points at.
 // ═══════════════════════════════════════════════════════════════════════════
 
 generator client {
@@ -75,45 +84,6 @@ enum OriginationChannel {
   INCUMBENT_LENDER
   PROPRIETARY
   CLUB
-}
-
-enum EntityRole {
-  BORROWER
-  CO_BORROWER
-  GUARANTOR
-  PLEDGOR
-  HOLDCO
-}
-
-enum FacilityType {
-  UNITRANCHE
-  FIRST_LIEN_TL
-  SECOND_LIEN
-  REVOLVER
-  DELAYED_DRAW
-  ABL
-  MEZZANINE
-  HOLDCO_PIK
-}
-
-enum Seniority {
-  FIRST_LIEN
-  SECOND_LIEN
-  UNSECURED
-  SUBORDINATED
-}
-
-enum LienType {
-  FIRST
-  SECOND
-  UNSECURED
-}
-
-enum AgentRole {
-  ADMIN_AGENT
-  COLLATERAL_AGENT
-  LEAD_ARRANGER
-  PARTICIPANT
 }
 
 enum CovenantCategory {
@@ -362,8 +332,6 @@ enum IdScheme {
   CLEARPAR
   WSO
   ADMIN_POSITION
-  UCC_FILING
-  PARCEL
   OTHER
 }
 
@@ -376,7 +344,6 @@ enum IdSource {
   GLEIF
   SEC
   FUND_ADMIN
-  FILING_OFFICE
   MANUAL
 }
 
@@ -395,6 +362,8 @@ model Organization {
   teams        Team[]
   sponsors     Sponsor[]
   companies    Company[]
+  advisors     Advisor[]
+  instruments  Instrument[]
   deals        Deal[]
   funds        Fund[]
   lenders      Lender[]
@@ -417,31 +386,32 @@ model User {
   memberships        OrgMembership[]
   teamMemberships    TeamMembership[]
   dealRoles          DealTeamMember[]
-  uploadedDocuments  DocumentVersion[]     @relation("DocVersionAuthor")
+  uploadedDocuments  DocumentVersion[]      @relation("DocVersionAuthor")
   documentEvents     DocumentEvent[]
-  grantsReceived     DocumentAccessGrant[] @relation("GrantGrantee")
-  grantsIssued       DocumentAccessGrant[] @relation("GrantIssuer")
-  tasksAssigned      Task[]                @relation("TaskAssignee")
-  tasksCreated       Task[]                @relation("TaskCreator")
+  grantsReceived     DocumentAccessGrant[]  @relation("GrantGrantee")
+  grantsIssued       DocumentAccessGrant[]  @relation("GrantIssuer")
+  tasksAssigned      Task[]                 @relation("TaskAssignee")
+  tasksCreated       Task[]                 @relation("TaskCreator")
   notes              Note[]
   comments           Comment[]
   icVotes            ICVote[]
   memoVersions       MemoVersion[]
-  diligenceItems     DiligenceItem[]       @relation("DiligenceAssignee")
+  diligenceItems     DiligenceItem[]        @relation("DiligenceAssignee")
   qaMessages         QAMessage[]
   stageTransitions   StageTransition[]
   ratingChanges      RatingHistory[]
   watchlistEvents    WatchlistEvent[]
-  valuationsPrepared Valuation[]           @relation("ValuationPreparer")
-  valuationsApproved Valuation[]           @relation("ValuationApprover")
-  factOverrides      FundamentalFact[]     @relation("FactOverrider")
+  valuationsPrepared Valuation[]            @relation("ValuationPreparer")
+  valuationsApproved Valuation[]            @relation("ValuationApprover")
+  factOverrides      FundamentalFact[]      @relation("FactOverrider")
   addbacks           EbitdaAdjustment[]
-  covenantWaivers    CovenantTest[]        @relation("CovenantWaiver")
+  covenantWaivers    CovenantTest[]         @relation("CovenantWaiver")
   consentVotes       AmendmentConsent[]
+  termSheets         TermSheet[]
   deliveriesLogged   ReportingDelivery[]
-  wallCrossSubject   WallCrossEvent[]      @relation("WallCrossSubject")
-  wallCrossApprover  WallCrossEvent[]      @relation("WallCrossApprover")
-  alertsAssigned     Alert[]               @relation("AlertAssignee")
+  wallCrossSubject   WallCrossEvent[]       @relation("WallCrossSubject")
+  wallCrossApprover  WallCrossEvent[]       @relation("WallCrossApprover")
+  alertsAssigned     Alert[]                @relation("AlertAssignee")
   savedViews         SavedView[]
   auditEvents        AuditEvent[]
   activityEvents     ActivityEvent[]
@@ -554,111 +524,105 @@ model ActivityEvent {
   @@index([occurredAt])
 }
 
-// ═══════════════════ 2. COUNTERPARTIES & OBLIGOR STRUCTURE ═════════════════
+// ════════════════════ 2. LINKS TO SYSTEMS OF RECORD ═══════════════════════
+// The deal room is an overlay. Each thing it refers to but does not own is a
+// link: a local row other tables can hold a foreign key to, carrying only the
+// record's ID in its system of record. Names, descriptions, industries,
+// ownership, legal-entity structure, loan terms and collateral details are
+// read from the source when needed — never copied here, so they cannot drift.
 
-model Industry {
-  id        String     @id @default(cuid())
-  code      String     @unique // e.g. GICS / NAICS code
-  name      String
-  parentId  String?
-  parent    Industry?  @relation("IndustryTree", fields: [parentId], references: [id])
-  children  Industry[] @relation("IndustryTree")
-  companies Company[]
-}
-
-model Sponsor {
+/// Link to a borrower in the entity master. Its name, industry, ownership,
+/// legal-entity structure and fiscal calendar are read from there.
+model Company {
   id        String       @id @default(cuid())
   orgId     String
   org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  name      String
-  type      String // PE | Family Office | Independent
-  aum       Decimal?     @db.Decimal(20, 4)
-  currency  Currency     @default(USD)
-  hqCity    String?
-  vintage   Int?
-  companies Company[]
-  deals     Deal[]
-  contacts  Contact[]
+  /// The borrower's ID in the entity master.
+  masterRef String
+  createdAt DateTime     @default(now())
 
-  @@unique([orgId, name])
-}
-
-/// The operating business. Distinct from the legal entities that actually
-/// borrow or guarantee (see LegalEntity).
-model Company {
-  id          String       @id @default(cuid())
-  orgId       String
-  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  name        String
-  legalName   String?
-  sponsorId   String?
-  sponsor     Sponsor?     @relation(fields: [sponsorId], references: [id])
-  industryId  String?
-  industry    Industry?    @relation(fields: [industryId], references: [id])
-  description String?
-  hqCity      String?
-  country     String?
-  website     String?
-  foundedYear Int?
-  createdAt   DateTime     @default(now())
-
-  legalEntities    LegalEntity[]
   deals            Deal[]
   financialPeriods FinancialPeriod[]
   fundamentals     FundamentalFact[]
   addbacks         EbitdaAdjustment[]
   ratings          RatingHistory[]
   watchlistEvents  WatchlistEvent[]
-  contacts         Contact[]
   identifiers      InstrumentIdentifier[]
 
-  @@unique([orgId, name])
-  @@index([industryId])
-  @@index([sponsorId])
+  @@unique([orgId, masterRef])
 }
 
-/// Borrowers, co-borrowers, guarantors and pledgors in the credit group.
-model LegalEntity {
-  id           String        @id @default(cuid())
-  companyId    String
-  company      Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  name         String
-  jurisdiction String?
-  role         EntityRole
-  parentId     String?
-  parent       LegalEntity?  @relation("EntityTree", fields: [parentId], references: [id])
-  children     LegalEntity[] @relation("EntityTree")
+/// Link to a sponsor in the entity master.
+model Sponsor {
+  id        String       @id @default(cuid())
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  masterRef String
+  createdAt DateTime     @default(now())
+  deals     Deal[]
 
-  facilityRoles FacilityObligor[]
-  collateral    Collateral[]
-  identifiers   InstrumentIdentifier[]
-
-  @@index([companyId, role])
+  @@unique([orgId, masterRef])
 }
 
+/// Link to an advisor — law firm, QoE provider, consultant — in the entity master.
 model Advisor {
-  id       String        @id @default(cuid())
-  name     String
-  kind     String // Law firm | QoE | Consultant | Bank
-  contacts Contact[]
-  deals    DealAdvisor[]
+  id        String        @id @default(cuid())
+  orgId     String
+  org       Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  masterRef String
+  createdAt DateTime      @default(now())
+  deals     DealAdvisor[]
+
+  @@unique([orgId, masterRef])
 }
 
-model Contact {
-  id        String   @id @default(cuid())
-  name      String
-  email     String?
-  phone     String?
-  title     String?
-  sponsorId String?
-  sponsor   Sponsor? @relation(fields: [sponsorId], references: [id], onDelete: Cascade)
-  companyId String?
-  company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  advisorId String?
-  advisor   Advisor? @relation(fields: [advisorId], references: [id], onDelete: Cascade)
+/// Link to a lender in the entity master. `isSelf` marks the lender that is
+/// this organisation — the one fact about it the master cannot know.
+model Lender {
+  id        String             @id @default(cuid())
+  orgId     String
+  org       Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  masterRef String
+  isSelf    Boolean            @default(false)
+  createdAt DateTime           @default(now())
+  consents  AmendmentConsent[]
 
-  @@index([companyId])
-  @@index([sponsorId])
+  @@unique([orgId, masterRef])
+}
+
+/// Link to a booked instrument in the security master. The instrument holds
+/// the loan's terms — pricing, rate index and fixings, maturity, amortisation,
+/// call protection, fees, the lender register and the cash-flow schedule — and
+/// they are pulled from there. One instrument can be reached from more than
+/// one deal (an add-on fungible with an existing tranche), so positions and
+/// identifiers hang off the instrument rather than a deal's tranche.
+model Instrument {
+  id        String       @id @default(cuid())
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  /// The instrument's ID in the security master.
+  masterRef String
+  createdAt DateTime     @default(now())
+
+  facilities  Facility[]
+  positions   Position[]
+  amendments  Amendment[]
+  identifiers InstrumentIdentifier[]
+
+  @@unique([orgId, masterRef])
+}
+
+/// Link to collateral in the collateral system, from the deal whose diligence
+/// and monitoring cover it. What it is, what it is worth and which instruments
+/// it secures are read from the collateral system.
+model Collateral {
+  id        String   @id @default(cuid())
+  dealId    String
+  deal      Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  masterRef String
+  createdAt DateTime @default(now())
+
+  @@unique([dealId, masterRef])
 }
 
 // ═══════════════════════ 3. DEAL & PIPELINE ════════════════════════════════
@@ -705,6 +669,8 @@ model Deal {
   notes           Note[]
   comments        Comment[]
   facilities      Facility[]
+  termSheets      TermSheet[]
+  collateral      Collateral[]
   covenants       CovenantDefinition[]
   obligations     ReportingObligation[]
   amendments      Amendment[]
@@ -771,12 +737,15 @@ model ICMeeting {
 }
 
 model ICAgendaItem {
-  id        String    @id @default(cuid())
-  meetingId String
-  meeting   ICMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
-  dealId    String
-  deal      Deal      @relation(fields: [dealId], references: [id], onDelete: Cascade)
-  outcome   String?
+  id          String     @id @default(cuid())
+  meetingId   String
+  meeting     ICMeeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  dealId      String
+  deal        Deal       @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  /// The terms put to this committee — the version its decision applies to.
+  termSheetId String?
+  termSheet   TermSheet? @relation(fields: [termSheetId], references: [id])
+  outcome     String?
 
   @@unique([meetingId, dealId])
 }
@@ -1042,132 +1011,71 @@ model QAMessage {
   @@index([threadId, createdAt])
 }
 
-// ═════════════ 5. FACILITIES, SYNDICATION, COLLATERAL, AMENDMENTS ══════════
+// ═══════════════════ 5. TRANCHES, TERM SHEETS & AMENDMENTS ═════════════════
+// What the deal room owns about a financing is its decision trail: the
+// tranches a deal proposes, the term-sheet versions taken to committee, and
+// the amendment and consent workflow. Booked terms belong to the security
+// master and are read through the Instrument link.
 
+/// One tranche of a deal as the deal room tracks it. Before booking it is a
+/// proposal, described in the deal's TermSheet; once booked it points at its
+/// Instrument and its terms are read from the security master.
 model Facility {
   id           String       @id @default(cuid())
   dealId       String
   deal         Deal         @relation(fields: [dealId], references: [id], onDelete: Cascade)
-  name         String
-  type         FacilityType
-  seniority    Seniority
-  currency     Currency     @default(USD)
-  commitment   Decimal      @db.Decimal(20, 4)
-  fundedAmount Decimal      @default(0) @db.Decimal(20, 4)
-  maturityOn   DateTime?
-  tenorMonths  Int?
-  order        Int          @default(0)
+  /// Our name for the tranche within the deal: "Unitranche", "DDTL", "RCF".
+  label        String
+  /// Set when the tranche is booked; null while it is a proposal.
+  instrumentId String?
+  instrument   Instrument?  @relation(fields: [instrumentId], references: [id])
+  createdAt    DateTime     @default(now())
+  allocations  Allocation[]
 
-  pricings       FacilityPricing[]
-  obligors       FacilityObligor[]
-  participations FacilityParticipation[]
-  collateral     Collateral[]
-  positions      Position[]
-  allocations    Allocation[]
-  cashflows      FacilityCashflow[]
-  amendments     Amendment[]
-  identifiers    InstrumentIdentifier[]
-
-  @@index([dealId])
+  @@unique([dealId, label])
+  @@index([instrumentId])
 }
 
-/// Pricing is effective-dated so repricings and margin ratchets are history,
-/// not an overwrite. The live terms are the row with the latest effectiveFrom.
-model FacilityPricing {
-  id            String   @id @default(cuid())
-  facilityId    String
-  facility      Facility @relation(fields: [facilityId], references: [id], onDelete: Cascade)
-  effectiveFrom DateTime
-  baseRateCode  String? // e.g. SOFR3M -> ReferenceRate.code
-  spreadBps     Int
-  floorBps      Int      @default(0)
-  oidPct        Decimal  @default(0) @db.Decimal(9, 4)
-  pikBps        Int      @default(0)
-  upfrontFeeBps Int      @default(0)
-  unusedFeeBps  Int      @default(0)
-  reason        String?
+/// A version of the structure and terms proposed for a deal: the snapshot a
+/// committee approves. It is a decision record, not the live terms — after
+/// booking the security master is authoritative and nothing is copied back.
+model TermSheet {
+  id          String         @id @default(cuid())
+  dealId      String
+  deal        Deal           @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  versionNo   Int
+  /// The proposed tranches and their terms, as structured at the time.
+  terms       Json
+  authorId    String?
+  author      User?          @relation(fields: [authorId], references: [id])
+  createdAt   DateTime       @default(now())
+  agendaItems ICAgendaItem[]
 
-  @@unique([facilityId, effectiveFrom])
-  @@index([facilityId, effectiveFrom])
+  @@unique([dealId, versionNo])
 }
 
-model FacilityObligor {
-  id            String      @id @default(cuid())
-  facilityId    String
-  facility      Facility    @relation(fields: [facilityId], references: [id], onDelete: Cascade)
-  legalEntityId String
-  legalEntity   LegalEntity @relation(fields: [legalEntityId], references: [id], onDelete: Cascade)
-  role          EntityRole
-
-  @@unique([facilityId, legalEntityId, role])
-}
-
-model Collateral {
-  id             String       @id @default(cuid())
-  facilityId     String?
-  facility       Facility?    @relation(fields: [facilityId], references: [id], onDelete: Cascade)
-  legalEntityId  String?
-  legalEntity    LegalEntity? @relation(fields: [legalEntityId], references: [id])
-  description    String
-  assetType      String // AR | Inventory | PP&E | IP | Equity pledge
-  lienType       LienType     @default(FIRST)
-  appraisedValue Decimal?     @db.Decimal(20, 4)
-  currency       Currency     @default(USD)
-  appraisedOn    DateTime?
-  identifiers    InstrumentIdentifier[]
-
-  @@index([facilityId])
-}
-
-/// A lending institution — including our own funds' counterparties in a club
-/// or syndicate. `isSelf` marks our own house.
-model Lender {
-  id             String                  @id @default(cuid())
-  orgId          String
-  org            Organization            @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  name           String
-  isSelf         Boolean                 @default(false)
-  participations FacilityParticipation[]
-  consents       AmendmentConsent[]
-
-  @@unique([orgId, name])
-}
-
-model FacilityParticipation {
-  id         String    @id @default(cuid())
-  facilityId String
-  facility   Facility  @relation(fields: [facilityId], references: [id], onDelete: Cascade)
-  lenderId   String
-  lender     Lender    @relation(fields: [lenderId], references: [id], onDelete: Cascade)
-  commitment Decimal   @db.Decimal(20, 4)
-  funded     Decimal   @default(0) @db.Decimal(20, 4)
-  agentRole  AgentRole @default(PARTICIPANT)
-  joinedOn   DateTime?
-
-  @@unique([facilityId, lenderId])
-  @@index([lenderId])
-}
-
+/// An amendment, waiver or consent request moving through its workflow. The
+/// terms it changes are applied in the security master.
 model Amendment {
-  id                 String             @id @default(cuid())
-  dealId             String
-  deal               Deal               @relation(fields: [dealId], references: [id], onDelete: Cascade)
-  facilityId         String?
-  facility           Facility?          @relation(fields: [facilityId], references: [id])
-  type               AmendmentType
-  status             AmendmentStatus    @default(PROPOSED)
-  title              String
-  description        String?
-  /// Consent threshold under the credit agreement, e.g. 50.01 or 100 (sacred rights).
-  requiredConsentPct Decimal?           @db.Decimal(9, 4)
-  amendmentFeeBps    Int?
-  requestedOn        DateTime           @default(now())
-  effectiveOn        DateTime?
-  consents           AmendmentConsent[]
+  id           String             @id @default(cuid())
+  dealId       String
+  deal         Deal               @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  /// The instrument amended, when the amendment touches one.
+  instrumentId String?
+  instrument   Instrument?        @relation(fields: [instrumentId], references: [id])
+  type         AmendmentType
+  status       AmendmentStatus    @default(PROPOSED)
+  title        String
+  description  String?
+  requestedOn  DateTime           @default(now())
+  effectiveOn  DateTime?
+  consents     AmendmentConsent[]
 
   @@index([dealId, status])
 }
 
+/// A lender's consent vote. The required threshold and each lender's share at
+/// the record date come from the security master's lender register.
 model AmendmentConsent {
   id          String        @id @default(cuid())
   amendmentId String
@@ -1177,30 +1085,9 @@ model AmendmentConsent {
   userId      String?
   user        User?         @relation(fields: [userId], references: [id])
   choice      ConsentChoice
-  /// Share of the facility this consent carries, for threshold math.
-  weightPct   Decimal?      @db.Decimal(9, 4)
   votedAt     DateTime      @default(now())
 
   @@unique([amendmentId, lenderId])
-}
-
-model FacilityCashflow {
-  id           String   @id @default(cuid())
-  facilityId   String
-  facility     Facility @relation(fields: [facilityId], references: [id], onDelete: Cascade)
-  periodEnd    DateTime
-  label        String
-  beginningBal Decimal  @db.Decimal(20, 4)
-  drawdown     Decimal  @default(0) @db.Decimal(20, 4)
-  paydown      Decimal  @default(0) @db.Decimal(20, 4)
-  pikAccrued   Decimal  @default(0) @db.Decimal(20, 4)
-  interest     Decimal  @default(0) @db.Decimal(20, 4)
-  fees         Decimal  @default(0) @db.Decimal(20, 4)
-  endingBal    Decimal  @db.Decimal(20, 4)
-  isProjected  Boolean  @default(false)
-
-  @@unique([facilityId, periodEnd, isProjected])
-  @@index([facilityId, periodEnd])
 }
 
 // ═══════════ 6. FINANCIALS, FUNDAMENTAL FACTS & COVENANT ENGINE ════════════
@@ -1416,18 +1303,18 @@ model Allocation {
   @@unique([facilityId, fundId])
 }
 
-/// A fund's actual economic holding in a facility. This — not Deal — is what
+/// A fund's actual economic holding in an instrument. This — not Deal — is what
 /// portfolio exposure, marks and returns roll up from.
 model Position {
-  id           String    @id @default(cuid())
+  id           String     @id @default(cuid())
   fundId       String
-  fund         Fund      @relation(fields: [fundId], references: [id], onDelete: Cascade)
-  facilityId   String
-  facility     Facility  @relation(fields: [facilityId], references: [id], onDelete: Cascade)
-  currency     Currency  @default(USD)
-  parAmount    Decimal   @db.Decimal(20, 4)
-  fundedAmount Decimal   @default(0) @db.Decimal(20, 4)
-  costBasis    Decimal   @db.Decimal(20, 4)
+  fund         Fund       @relation(fields: [fundId], references: [id], onDelete: Cascade)
+  instrumentId String
+  instrument   Instrument @relation(fields: [instrumentId], references: [id], onDelete: Cascade)
+  currency     Currency   @default(USD)
+  parAmount    Decimal    @db.Decimal(20, 4)
+  fundedAmount Decimal    @default(0) @db.Decimal(20, 4)
+  costBasis    Decimal    @db.Decimal(20, 4)
   openedOn     DateTime
   closedOn     DateTime?
 
@@ -1436,8 +1323,8 @@ model Position {
   snapshots    ReturnSnapshot[]
   identifiers  InstrumentIdentifier[]
 
-  @@unique([fundId, facilityId])
-  @@index([facilityId])
+  @@unique([fundId, instrumentId])
+  @@index([instrumentId])
 }
 
 /// Dated cash flows — the input to XIRR and realized/unrealized splits.
@@ -1585,104 +1472,52 @@ model SavedView {
   @@unique([userId, route, name])
 }
 
-// ═══════════════════════ 9. REFERENCE & MARKET DATA ════════════════════════
+// ═════════════════════ 9. IDENTIFIERS & CROSS-REFERENCES ═══════════════════
+// The names the outside world uses for what this model links to: CUSIP, ISIN,
+// LoanX and FIGI for an instrument; LEI and Bloomberg company ID for a
+// borrower; the fund administrator's ID for a position. A link's masterRef is
+// what reaches its system of record; these cross-references are what let
+// third-party data — Bloomberg, Markit marks, agent notices — be matched to
+// the right link. They are optional, plural and change over time — a tranche
+// picks them up as it closes and trades, and an amend-and-extend retires one
+// and issues another — so they are effective-dated rows, not columns.
 
-model ReferenceRate {
-  id      String   @id @default(cuid())
-  code    String // SOFR3M | EURIBOR3M
-  asOf    DateTime
-  ratePct Decimal  @db.Decimal(9, 6)
-
-  @@unique([code, asOf])
-}
-
-model FxRate {
-  id    String   @id @default(cuid())
-  base  Currency
-  quote Currency
-  asOf  DateTime
-  rate  Decimal  @db.Decimal(18, 8)
-
-  @@unique([base, quote, asOf])
-}
-
-/// Persisted market comparables (e.g. Bloomberg DLEN direct-lending prints)
-/// so pricing context is queryable and historical, not a live-only API call.
-model MarketComp {
-  id           String        @id @default(cuid())
-  borrowerName String
-  sector       String?
-  facilityType FacilityType?
-  size         Decimal?      @db.Decimal(20, 4)
-  currency     Currency      @default(USD)
-  spreadBps    Int?
-  oidPct       Decimal?      @db.Decimal(9, 4)
-  leverage     Decimal?      @db.Decimal(18, 6)
-  yieldPct     Decimal?      @db.Decimal(9, 4)
-  pricedOn     DateTime
-  source       String        @default("BLOOMBERG")
-  /// The comp's own identifier when the print carries one (CUSIP, LoanX, FIGI),
-  /// so repeated prints deduplicate and a comp can be matched to our own
-  /// facility. A third party's instrument, so it is not an InstrumentIdentifier.
-  idScheme     IdScheme?
-  idValue      String?
-
-  @@index([sector, pricedOn])
-  @@index([idScheme, idValue])
-}
-
-// ═════════════════════ 10. IDENTIFIERS & CROSS-REFERENCES ══════════════════
-// The real-world names of what this model tracks: CUSIP, ISIN, LoanX and FIGI
-// for a facility; LEI and Bloomberg company ID for an issuer; the agent's and
-// fund administrator's own references; UCC filing numbers for collateral.
-// They are optional, plural and change over time — a tranche picks them up as
-// it closes and trades, and an amend-and-extend retires one and issues another
-// — so they are effective-dated rows rather than nullable columns.
-
-/// One identifier for exactly one entity, in force from validFrom until
-/// validTo. Each scheme is attached at its real level: LEI on the LegalEntity
-/// that borrows, Bloomberg company ID on the Company, CUSIP and LoanX on the
-/// Facility, the administrator's ID on the Position, the UCC-1 filing on the
-/// Collateral. Retired rows are kept, so "what was this tranche called on
+/// One identifier for exactly one link, in force from validFrom until validTo:
+/// CUSIP, ISIN, LoanX and FIGI on an Instrument; LEI, Bloomberg company ID and
+/// CIK on a Company, as the borrower of record; the administrator's ID on a
+/// Position. Retired rows are kept, so "what was this tranche called on
 /// 31 March?" can be answered for marks and agent reconciliations. Enforced in
 /// the migration because Prisma cannot express them: exactly one target is set
 /// (CHECK num_nonnulls(...) = 1); a live value (validTo IS NULL) names one
 /// thing only, and a target holds one live value per scheme and namespace
 /// (partial unique indexes). Check digits are validated on write.
 model InstrumentIdentifier {
-  id            String       @id @default(cuid())
-  orgId         String
-  org           Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  companyId     String?
-  company       Company?     @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  legalEntityId String?
-  legalEntity   LegalEntity? @relation(fields: [legalEntityId], references: [id], onDelete: Cascade)
-  facilityId    String?
-  facility      Facility?    @relation(fields: [facilityId], references: [id], onDelete: Cascade)
-  positionId    String?
-  position      Position?    @relation(fields: [positionId], references: [id], onDelete: Cascade)
-  collateralId  String?
-  collateral    Collateral?  @relation(fields: [collateralId], references: [id], onDelete: Cascade)
-  scheme        IdScheme
+  id           String       @id @default(cuid())
+  orgId        String
+  org          Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  companyId    String?
+  company      Company?     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  instrumentId String?
+  instrument   Instrument?  @relation(fields: [instrumentId], references: [id], onDelete: Cascade)
+  positionId   String?
+  position     Position?    @relation(fields: [positionId], references: [id], onDelete: Cascade)
+  scheme       IdScheme
   /// Normalised: upper-case, separators removed.
-  value         String
+  value        String
   /// The issuer, for schemes unique only inside one system (agent, WSO
-  /// instance, filing office). Empty rather than NULL so it takes part in
-  /// the uniqueness rule.
-  namespace     String       @default("")
-  validFrom     DateTime
+  /// instance). Empty rather than NULL so it takes part in the uniqueness rule.
+  namespace    String       @default("")
+  validFrom    DateTime
   /// Set when the identifier is retired; the row is kept for history.
-  validTo       DateTime?
-  source        IdSource
-  verifiedById  String?
-  verifiedBy    User?        @relation(fields: [verifiedById], references: [id])
-  verifiedAt    DateTime?
-  createdAt     DateTime     @default(now())
+  validTo      DateTime?
+  source       IdSource
+  verifiedById String?
+  verifiedBy   User?        @relation(fields: [verifiedById], references: [id])
+  verifiedAt   DateTime?
+  createdAt    DateTime     @default(now())
 
   @@index([orgId, scheme, value])
   @@index([companyId])
-  @@index([legalEntityId])
-  @@index([facilityId])
+  @@index([instrumentId])
   @@index([positionId])
-  @@index([collateralId])
 }

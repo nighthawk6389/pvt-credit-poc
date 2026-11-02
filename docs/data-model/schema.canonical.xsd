@@ -7,8 +7,8 @@
     source:    docs/data-model/schema.canonical.prisma
     generator: docs/data-model/generate-xsd.mjs   (node generate-xsd.mjs)
 
-  This is a reading/interchange projection of the canonical model: 69 entity
-  types, 41 enumerations, and root-level key/keyref pairs mirroring the
+  This is a reading/interchange projection of the canonical model: 61 entity
+  types, 36 enumerations, and root-level key/keyref pairs mirroring the
   relational foreign keys. Validating an instance therefore checks referential
   integrity, not just shape.
 
@@ -42,16 +42,6 @@
     </xs:restriction>
   </xs:simpleType>
 
-  <xs:simpleType name="FxFactor">
-    <xs:annotation>
-      <xs:documentation>An FX conversion factor. Decimal(18,8).</xs:documentation>
-    </xs:annotation>
-    <xs:restriction base="xs:decimal">
-      <xs:totalDigits value="18"/>
-      <xs:fractionDigits value="8"/>
-    </xs:restriction>
-  </xs:simpleType>
-
   <xs:simpleType name="MetricValue">
     <xs:annotation>
       <xs:documentation>Generic dashboard metric value — wide enough for aggregate currency amounts. Decimal(24,6).</xs:documentation>
@@ -79,16 +69,6 @@
     <xs:restriction base="xs:decimal">
       <xs:totalDigits value="9"/>
       <xs:fractionDigits value="4"/>
-    </xs:restriction>
-  </xs:simpleType>
-
-  <xs:simpleType name="RatePercent">
-    <xs:annotation>
-      <xs:documentation>An interest rate in percent units, to six decimals. Decimal(9,6).</xs:documentation>
-    </xs:annotation>
-    <xs:restriction base="xs:decimal">
-      <xs:totalDigits value="9"/>
-      <xs:fractionDigits value="6"/>
     </xs:restriction>
   </xs:simpleType>
 
@@ -163,55 +143,6 @@
       <xs:enumeration value="INCUMBENT_LENDER"/>
       <xs:enumeration value="PROPRIETARY"/>
       <xs:enumeration value="CLUB"/>
-    </xs:restriction>
-  </xs:simpleType>
-
-  <xs:simpleType name="EntityRole">
-    <xs:restriction base="xs:string">
-      <xs:enumeration value="BORROWER"/>
-      <xs:enumeration value="CO_BORROWER"/>
-      <xs:enumeration value="GUARANTOR"/>
-      <xs:enumeration value="PLEDGOR"/>
-      <xs:enumeration value="HOLDCO"/>
-    </xs:restriction>
-  </xs:simpleType>
-
-  <xs:simpleType name="FacilityType">
-    <xs:restriction base="xs:string">
-      <xs:enumeration value="UNITRANCHE"/>
-      <xs:enumeration value="FIRST_LIEN_TL"/>
-      <xs:enumeration value="SECOND_LIEN"/>
-      <xs:enumeration value="REVOLVER"/>
-      <xs:enumeration value="DELAYED_DRAW"/>
-      <xs:enumeration value="ABL"/>
-      <xs:enumeration value="MEZZANINE"/>
-      <xs:enumeration value="HOLDCO_PIK"/>
-    </xs:restriction>
-  </xs:simpleType>
-
-  <xs:simpleType name="Seniority">
-    <xs:restriction base="xs:string">
-      <xs:enumeration value="FIRST_LIEN"/>
-      <xs:enumeration value="SECOND_LIEN"/>
-      <xs:enumeration value="UNSECURED"/>
-      <xs:enumeration value="SUBORDINATED"/>
-    </xs:restriction>
-  </xs:simpleType>
-
-  <xs:simpleType name="LienType">
-    <xs:restriction base="xs:string">
-      <xs:enumeration value="FIRST"/>
-      <xs:enumeration value="SECOND"/>
-      <xs:enumeration value="UNSECURED"/>
-    </xs:restriction>
-  </xs:simpleType>
-
-  <xs:simpleType name="AgentRole">
-    <xs:restriction base="xs:string">
-      <xs:enumeration value="ADMIN_AGENT"/>
-      <xs:enumeration value="COLLATERAL_AGENT"/>
-      <xs:enumeration value="LEAD_ARRANGER"/>
-      <xs:enumeration value="PARTICIPANT"/>
     </xs:restriction>
   </xs:simpleType>
 
@@ -520,8 +451,6 @@
       <xs:enumeration value="CLEARPAR"/>
       <xs:enumeration value="WSO"/>
       <xs:enumeration value="ADMIN_POSITION"/>
-      <xs:enumeration value="UCC_FILING"/>
-      <xs:enumeration value="PARCEL"/>
       <xs:enumeration value="OTHER"/>
     </xs:restriction>
   </xs:simpleType>
@@ -536,7 +465,6 @@
       <xs:enumeration value="GLEIF"/>
       <xs:enumeration value="SEC"/>
       <xs:enumeration value="FUND_ADMIN"/>
-      <xs:enumeration value="FILING_OFFICE"/>
       <xs:enumeration value="MANUAL"/>
     </xs:restriction>
   </xs:simpleType>
@@ -785,32 +713,35 @@
     </xs:sequence>
   </xs:complexType>
 
-  <!-- ══════ 2. COUNTERPARTIES & OBLIGOR STRUCTURE ═════════════════════════ -->
+  <!-- ══════ 2. LINKS TO SYSTEMS OF RECORD ═════════════════════════════════ -->
 
-  <xs:complexType name="Industry">
+  <xs:complexType name="Company">
+    <xs:annotation>
+      <xs:documentation>Link to a borrower in the entity master. Its name, industry, ownership, legal-entity structure and fiscal calendar are read from there. Unique: (orgId, masterRef).</xs:documentation>
+    </xs:annotation>
     <xs:sequence>
       <xs:element name="id" type="pc:Cuid">
         <xs:annotation>
           <xs:documentation>Primary key.</xs:documentation>
         </xs:annotation>
       </xs:element>
-      <xs:element name="code" type="xs:string">
+      <xs:element name="orgId" type="pc:Cuid">
         <xs:annotation>
-          <xs:documentation>Note: e.g. GICS / NAICS code. Unique.</xs:documentation>
+          <xs:documentation>Foreign key → Organization.id.</xs:documentation>
         </xs:annotation>
       </xs:element>
-      <xs:element name="name" type="xs:string"/>
-      <xs:element name="parentId" type="pc:Cuid" minOccurs="0">
+      <xs:element name="masterRef" type="xs:string">
         <xs:annotation>
-          <xs:documentation>Foreign key → Industry.id.</xs:documentation>
+          <xs:documentation>The borrower's ID in the entity master.</xs:documentation>
         </xs:annotation>
       </xs:element>
+      <xs:element name="createdAt" type="xs:dateTime"/>
     </xs:sequence>
   </xs:complexType>
 
   <xs:complexType name="Sponsor">
     <xs:annotation>
-      <xs:documentation>Unique: (orgId, name).</xs:documentation>
+      <xs:documentation>Link to a sponsor in the entity master. Unique: (orgId, masterRef).</xs:documentation>
     </xs:annotation>
     <xs:sequence>
       <xs:element name="id" type="pc:Cuid">
@@ -823,62 +754,14 @@
           <xs:documentation>Foreign key → Organization.id.</xs:documentation>
         </xs:annotation>
       </xs:element>
-      <xs:element name="name" type="xs:string"/>
-      <xs:element name="type" type="xs:string">
-        <xs:annotation>
-          <xs:documentation>Note: PE | Family Office | Independent.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="aum" type="pc:Money" minOccurs="0"/>
-      <xs:element name="currency" type="pc:Currency" default="USD">
-        <xs:annotation>
-          <xs:documentation>Defaults to USD.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="hqCity" type="xs:string" minOccurs="0"/>
-      <xs:element name="vintage" type="xs:int" minOccurs="0"/>
-    </xs:sequence>
-  </xs:complexType>
-
-  <xs:complexType name="Company">
-    <xs:annotation>
-      <xs:documentation>The operating business. Distinct from the legal entities that actually borrow or guarantee (see LegalEntity). Unique: (orgId, name).</xs:documentation>
-    </xs:annotation>
-    <xs:sequence>
-      <xs:element name="id" type="pc:Cuid">
-        <xs:annotation>
-          <xs:documentation>Primary key.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="orgId" type="pc:Cuid">
-        <xs:annotation>
-          <xs:documentation>Foreign key → Organization.id.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="name" type="xs:string"/>
-      <xs:element name="legalName" type="xs:string" minOccurs="0"/>
-      <xs:element name="sponsorId" type="pc:Cuid" minOccurs="0">
-        <xs:annotation>
-          <xs:documentation>Foreign key → Sponsor.id.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="industryId" type="pc:Cuid" minOccurs="0">
-        <xs:annotation>
-          <xs:documentation>Foreign key → Industry.id.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="description" type="xs:string" minOccurs="0"/>
-      <xs:element name="hqCity" type="xs:string" minOccurs="0"/>
-      <xs:element name="country" type="xs:string" minOccurs="0"/>
-      <xs:element name="website" type="xs:string" minOccurs="0"/>
-      <xs:element name="foundedYear" type="xs:int" minOccurs="0"/>
+      <xs:element name="masterRef" type="xs:string"/>
       <xs:element name="createdAt" type="xs:dateTime"/>
     </xs:sequence>
   </xs:complexType>
 
-  <xs:complexType name="LegalEntity">
+  <xs:complexType name="Advisor">
     <xs:annotation>
-      <xs:documentation>Borrowers, co-borrowers, guarantors and pledgors in the credit group.</xs:documentation>
+      <xs:documentation>Link to an advisor — law firm, QoE provider, consultant — in the entity master. Unique: (orgId, masterRef).</xs:documentation>
     </xs:annotation>
     <xs:sequence>
       <xs:element name="id" type="pc:Cuid">
@@ -886,64 +769,82 @@
           <xs:documentation>Primary key.</xs:documentation>
         </xs:annotation>
       </xs:element>
-      <xs:element name="companyId" type="pc:Cuid">
+      <xs:element name="orgId" type="pc:Cuid">
         <xs:annotation>
-          <xs:documentation>Foreign key → Company.id.</xs:documentation>
+          <xs:documentation>Foreign key → Organization.id.</xs:documentation>
         </xs:annotation>
       </xs:element>
-      <xs:element name="name" type="xs:string"/>
-      <xs:element name="jurisdiction" type="xs:string" minOccurs="0"/>
-      <xs:element name="role" type="pc:EntityRole"/>
-      <xs:element name="parentId" type="pc:Cuid" minOccurs="0">
-        <xs:annotation>
-          <xs:documentation>Foreign key → LegalEntity.id.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
+      <xs:element name="masterRef" type="xs:string"/>
+      <xs:element name="createdAt" type="xs:dateTime"/>
     </xs:sequence>
   </xs:complexType>
 
-  <xs:complexType name="Advisor">
+  <xs:complexType name="Lender">
+    <xs:annotation>
+      <xs:documentation>Link to a lender in the entity master. `isSelf` marks the lender that is this organisation — the one fact about it the master cannot know. Unique: (orgId, masterRef).</xs:documentation>
+    </xs:annotation>
     <xs:sequence>
       <xs:element name="id" type="pc:Cuid">
         <xs:annotation>
           <xs:documentation>Primary key.</xs:documentation>
         </xs:annotation>
       </xs:element>
-      <xs:element name="name" type="xs:string"/>
-      <xs:element name="kind" type="xs:string">
+      <xs:element name="orgId" type="pc:Cuid">
         <xs:annotation>
-          <xs:documentation>Note: Law firm | QoE | Consultant | Bank.</xs:documentation>
+          <xs:documentation>Foreign key → Organization.id.</xs:documentation>
         </xs:annotation>
       </xs:element>
+      <xs:element name="masterRef" type="xs:string"/>
+      <xs:element name="isSelf" type="xs:boolean" default="false">
+        <xs:annotation>
+          <xs:documentation>Defaults to false.</xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element name="createdAt" type="xs:dateTime"/>
     </xs:sequence>
   </xs:complexType>
 
-  <xs:complexType name="Contact">
+  <xs:complexType name="Instrument">
+    <xs:annotation>
+      <xs:documentation>Link to a booked instrument in the security master. The instrument holds the loan's terms — pricing, rate index and fixings, maturity, amortisation, call protection, fees, the lender register and the cash-flow schedule — and they are pulled from there. One instrument can be reached from more than one deal (an add-on fungible with an existing tranche), so positions and identifiers hang off the instrument rather than a deal's tranche. Unique: (orgId, masterRef).</xs:documentation>
+    </xs:annotation>
     <xs:sequence>
       <xs:element name="id" type="pc:Cuid">
         <xs:annotation>
           <xs:documentation>Primary key.</xs:documentation>
         </xs:annotation>
       </xs:element>
-      <xs:element name="name" type="xs:string"/>
-      <xs:element name="email" type="xs:string" minOccurs="0"/>
-      <xs:element name="phone" type="xs:string" minOccurs="0"/>
-      <xs:element name="title" type="xs:string" minOccurs="0"/>
-      <xs:element name="sponsorId" type="pc:Cuid" minOccurs="0">
+      <xs:element name="orgId" type="pc:Cuid">
         <xs:annotation>
-          <xs:documentation>Foreign key → Sponsor.id.</xs:documentation>
+          <xs:documentation>Foreign key → Organization.id.</xs:documentation>
         </xs:annotation>
       </xs:element>
-      <xs:element name="companyId" type="pc:Cuid" minOccurs="0">
+      <xs:element name="masterRef" type="xs:string">
         <xs:annotation>
-          <xs:documentation>Foreign key → Company.id.</xs:documentation>
+          <xs:documentation>The instrument's ID in the security master.</xs:documentation>
         </xs:annotation>
       </xs:element>
-      <xs:element name="advisorId" type="pc:Cuid" minOccurs="0">
+      <xs:element name="createdAt" type="xs:dateTime"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="Collateral">
+    <xs:annotation>
+      <xs:documentation>Link to collateral in the collateral system, from the deal whose diligence and monitoring cover it. What it is, what it is worth and which instruments it secures are read from the collateral system. Unique: (dealId, masterRef).</xs:documentation>
+    </xs:annotation>
+    <xs:sequence>
+      <xs:element name="id" type="pc:Cuid">
         <xs:annotation>
-          <xs:documentation>Foreign key → Advisor.id.</xs:documentation>
+          <xs:documentation>Primary key.</xs:documentation>
         </xs:annotation>
       </xs:element>
+      <xs:element name="dealId" type="pc:Cuid">
+        <xs:annotation>
+          <xs:documentation>Foreign key → Deal.id.</xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element name="masterRef" type="xs:string"/>
+      <xs:element name="createdAt" type="xs:dateTime"/>
     </xs:sequence>
   </xs:complexType>
 
@@ -1130,6 +1031,11 @@
       <xs:element name="dealId" type="pc:Cuid">
         <xs:annotation>
           <xs:documentation>Foreign key → Deal.id.</xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element name="termSheetId" type="pc:Cuid" minOccurs="0">
+        <xs:annotation>
+          <xs:documentation>The terms put to this committee — the version its decision applies to. Foreign key → TermSheet.id.</xs:documentation>
         </xs:annotation>
       </xs:element>
       <xs:element name="outcome" type="xs:string" minOccurs="0"/>
@@ -1641,9 +1547,12 @@
     </xs:sequence>
   </xs:complexType>
 
-  <!-- ══════ 5. FACILITIES, SYNDICATION, COLLATERAL, AMENDMENTS ════════════ -->
+  <!-- ══════ 5. TRANCHES, TERM SHEETS & AMENDMENTS ═════════════════════════ -->
 
   <xs:complexType name="Facility">
+    <xs:annotation>
+      <xs:documentation>One tranche of a deal as the deal room tracks it. Before booking it is a proposal, described in the deal's TermSheet; once booked it points at its Instrument and its terms are read from the security master. Unique: (dealId, label).</xs:documentation>
+    </xs:annotation>
     <xs:sequence>
       <xs:element name="id" type="pc:Cuid">
         <xs:annotation>
@@ -1655,33 +1564,23 @@
           <xs:documentation>Foreign key → Deal.id.</xs:documentation>
         </xs:annotation>
       </xs:element>
-      <xs:element name="name" type="xs:string"/>
-      <xs:element name="type" type="pc:FacilityType"/>
-      <xs:element name="seniority" type="pc:Seniority"/>
-      <xs:element name="currency" type="pc:Currency" default="USD">
+      <xs:element name="label" type="xs:string">
         <xs:annotation>
-          <xs:documentation>Defaults to USD.</xs:documentation>
+          <xs:documentation>Our name for the tranche within the deal: &quot;Unitranche&quot;, &quot;DDTL&quot;, &quot;RCF&quot;.</xs:documentation>
         </xs:annotation>
       </xs:element>
-      <xs:element name="commitment" type="pc:Money"/>
-      <xs:element name="fundedAmount" type="pc:Money" default="0">
+      <xs:element name="instrumentId" type="pc:Cuid" minOccurs="0">
         <xs:annotation>
-          <xs:documentation>Defaults to 0.</xs:documentation>
+          <xs:documentation>Set when the tranche is booked; null while it is a proposal. Foreign key → Instrument.id.</xs:documentation>
         </xs:annotation>
       </xs:element>
-      <xs:element name="maturityOn" type="xs:dateTime" minOccurs="0"/>
-      <xs:element name="tenorMonths" type="xs:int" minOccurs="0"/>
-      <xs:element name="order" type="xs:int" default="0">
-        <xs:annotation>
-          <xs:documentation>Defaults to 0.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
+      <xs:element name="createdAt" type="xs:dateTime"/>
     </xs:sequence>
   </xs:complexType>
 
-  <xs:complexType name="FacilityPricing">
+  <xs:complexType name="TermSheet">
     <xs:annotation>
-      <xs:documentation>Pricing is effective-dated so repricings and margin ratchets are history, not an overwrite. The live terms are the row with the latest effectiveFrom. Unique: (facilityId, effectiveFrom).</xs:documentation>
+      <xs:documentation>A version of the structure and terms proposed for a deal: the snapshot a committee approves. It is a decision record, not the live terms — after booking the security master is authoritative and nothing is copied back. Unique: (dealId, versionNo).</xs:documentation>
     </xs:annotation>
     <xs:sequence>
       <xs:element name="id" type="pc:Cuid">
@@ -1689,169 +1588,30 @@
           <xs:documentation>Primary key.</xs:documentation>
         </xs:annotation>
       </xs:element>
-      <xs:element name="facilityId" type="pc:Cuid">
+      <xs:element name="dealId" type="pc:Cuid">
         <xs:annotation>
-          <xs:documentation>Foreign key → Facility.id.</xs:documentation>
+          <xs:documentation>Foreign key → Deal.id.</xs:documentation>
         </xs:annotation>
       </xs:element>
-      <xs:element name="effectiveFrom" type="xs:dateTime"/>
-      <xs:element name="baseRateCode" type="xs:string" minOccurs="0">
+      <xs:element name="versionNo" type="xs:int"/>
+      <xs:element name="terms" type="pc:Json">
         <xs:annotation>
-          <xs:documentation>Note: e.g. SOFR3M -&gt; ReferenceRate.code.</xs:documentation>
+          <xs:documentation>The proposed tranches and their terms, as structured at the time.</xs:documentation>
         </xs:annotation>
       </xs:element>
-      <xs:element name="spreadBps" type="xs:int"/>
-      <xs:element name="floorBps" type="xs:int" default="0">
+      <xs:element name="authorId" type="pc:Cuid" minOccurs="0">
         <xs:annotation>
-          <xs:documentation>Defaults to 0.</xs:documentation>
+          <xs:documentation>Foreign key → User.id.</xs:documentation>
         </xs:annotation>
       </xs:element>
-      <xs:element name="oidPct" type="pc:Percent" default="0">
-        <xs:annotation>
-          <xs:documentation>Defaults to 0.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="pikBps" type="xs:int" default="0">
-        <xs:annotation>
-          <xs:documentation>Defaults to 0.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="upfrontFeeBps" type="xs:int" default="0">
-        <xs:annotation>
-          <xs:documentation>Defaults to 0.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="unusedFeeBps" type="xs:int" default="0">
-        <xs:annotation>
-          <xs:documentation>Defaults to 0.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="reason" type="xs:string" minOccurs="0"/>
-    </xs:sequence>
-  </xs:complexType>
-
-  <xs:complexType name="FacilityObligor">
-    <xs:annotation>
-      <xs:documentation>Unique: (facilityId, legalEntityId, role).</xs:documentation>
-    </xs:annotation>
-    <xs:sequence>
-      <xs:element name="id" type="pc:Cuid">
-        <xs:annotation>
-          <xs:documentation>Primary key.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="facilityId" type="pc:Cuid">
-        <xs:annotation>
-          <xs:documentation>Foreign key → Facility.id.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="legalEntityId" type="pc:Cuid">
-        <xs:annotation>
-          <xs:documentation>Foreign key → LegalEntity.id.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="role" type="pc:EntityRole"/>
-    </xs:sequence>
-  </xs:complexType>
-
-  <xs:complexType name="Collateral">
-    <xs:sequence>
-      <xs:element name="id" type="pc:Cuid">
-        <xs:annotation>
-          <xs:documentation>Primary key.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="facilityId" type="pc:Cuid" minOccurs="0">
-        <xs:annotation>
-          <xs:documentation>Foreign key → Facility.id.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="legalEntityId" type="pc:Cuid" minOccurs="0">
-        <xs:annotation>
-          <xs:documentation>Foreign key → LegalEntity.id.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="description" type="xs:string"/>
-      <xs:element name="assetType" type="xs:string">
-        <xs:annotation>
-          <xs:documentation>Note: AR | Inventory | PP&amp;E | IP | Equity pledge.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="lienType" type="pc:LienType" default="FIRST">
-        <xs:annotation>
-          <xs:documentation>Defaults to FIRST.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="appraisedValue" type="pc:Money" minOccurs="0"/>
-      <xs:element name="currency" type="pc:Currency" default="USD">
-        <xs:annotation>
-          <xs:documentation>Defaults to USD.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="appraisedOn" type="xs:dateTime" minOccurs="0"/>
-    </xs:sequence>
-  </xs:complexType>
-
-  <xs:complexType name="Lender">
-    <xs:annotation>
-      <xs:documentation>A lending institution — including our own funds' counterparties in a club or syndicate. `isSelf` marks our own house. Unique: (orgId, name).</xs:documentation>
-    </xs:annotation>
-    <xs:sequence>
-      <xs:element name="id" type="pc:Cuid">
-        <xs:annotation>
-          <xs:documentation>Primary key.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="orgId" type="pc:Cuid">
-        <xs:annotation>
-          <xs:documentation>Foreign key → Organization.id.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="name" type="xs:string"/>
-      <xs:element name="isSelf" type="xs:boolean" default="false">
-        <xs:annotation>
-          <xs:documentation>Defaults to false.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-    </xs:sequence>
-  </xs:complexType>
-
-  <xs:complexType name="FacilityParticipation">
-    <xs:annotation>
-      <xs:documentation>Unique: (facilityId, lenderId).</xs:documentation>
-    </xs:annotation>
-    <xs:sequence>
-      <xs:element name="id" type="pc:Cuid">
-        <xs:annotation>
-          <xs:documentation>Primary key.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="facilityId" type="pc:Cuid">
-        <xs:annotation>
-          <xs:documentation>Foreign key → Facility.id.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="lenderId" type="pc:Cuid">
-        <xs:annotation>
-          <xs:documentation>Foreign key → Lender.id.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="commitment" type="pc:Money"/>
-      <xs:element name="funded" type="pc:Money" default="0">
-        <xs:annotation>
-          <xs:documentation>Defaults to 0.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="agentRole" type="pc:AgentRole" default="PARTICIPANT">
-        <xs:annotation>
-          <xs:documentation>Defaults to PARTICIPANT.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="joinedOn" type="xs:dateTime" minOccurs="0"/>
+      <xs:element name="createdAt" type="xs:dateTime"/>
     </xs:sequence>
   </xs:complexType>
 
   <xs:complexType name="Amendment">
+    <xs:annotation>
+      <xs:documentation>An amendment, waiver or consent request moving through its workflow. The terms it changes are applied in the security master.</xs:documentation>
+    </xs:annotation>
     <xs:sequence>
       <xs:element name="id" type="pc:Cuid">
         <xs:annotation>
@@ -1863,9 +1623,9 @@
           <xs:documentation>Foreign key → Deal.id.</xs:documentation>
         </xs:annotation>
       </xs:element>
-      <xs:element name="facilityId" type="pc:Cuid" minOccurs="0">
+      <xs:element name="instrumentId" type="pc:Cuid" minOccurs="0">
         <xs:annotation>
-          <xs:documentation>Foreign key → Facility.id.</xs:documentation>
+          <xs:documentation>The instrument amended, when the amendment touches one. Foreign key → Instrument.id.</xs:documentation>
         </xs:annotation>
       </xs:element>
       <xs:element name="type" type="pc:AmendmentType"/>
@@ -1876,12 +1636,6 @@
       </xs:element>
       <xs:element name="title" type="xs:string"/>
       <xs:element name="description" type="xs:string" minOccurs="0"/>
-      <xs:element name="requiredConsentPct" type="pc:Percent" minOccurs="0">
-        <xs:annotation>
-          <xs:documentation>Consent threshold under the credit agreement, e.g. 50.01 or 100 (sacred rights).</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="amendmentFeeBps" type="xs:int" minOccurs="0"/>
       <xs:element name="requestedOn" type="xs:dateTime"/>
       <xs:element name="effectiveOn" type="xs:dateTime" minOccurs="0"/>
     </xs:sequence>
@@ -1889,7 +1643,7 @@
 
   <xs:complexType name="AmendmentConsent">
     <xs:annotation>
-      <xs:documentation>Unique: (amendmentId, lenderId).</xs:documentation>
+      <xs:documentation>A lender's consent vote. The required threshold and each lender's share at the record date come from the security master's lender register. Unique: (amendmentId, lenderId).</xs:documentation>
     </xs:annotation>
     <xs:sequence>
       <xs:element name="id" type="pc:Cuid">
@@ -1913,64 +1667,7 @@
         </xs:annotation>
       </xs:element>
       <xs:element name="choice" type="pc:ConsentChoice"/>
-      <xs:element name="weightPct" type="pc:Percent" minOccurs="0">
-        <xs:annotation>
-          <xs:documentation>Share of the facility this consent carries, for threshold math.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
       <xs:element name="votedAt" type="xs:dateTime"/>
-    </xs:sequence>
-  </xs:complexType>
-
-  <xs:complexType name="FacilityCashflow">
-    <xs:annotation>
-      <xs:documentation>Unique: (facilityId, periodEnd, isProjected).</xs:documentation>
-    </xs:annotation>
-    <xs:sequence>
-      <xs:element name="id" type="pc:Cuid">
-        <xs:annotation>
-          <xs:documentation>Primary key.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="facilityId" type="pc:Cuid">
-        <xs:annotation>
-          <xs:documentation>Foreign key → Facility.id.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="periodEnd" type="xs:dateTime"/>
-      <xs:element name="label" type="xs:string"/>
-      <xs:element name="beginningBal" type="pc:Money"/>
-      <xs:element name="drawdown" type="pc:Money" default="0">
-        <xs:annotation>
-          <xs:documentation>Defaults to 0.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="paydown" type="pc:Money" default="0">
-        <xs:annotation>
-          <xs:documentation>Defaults to 0.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="pikAccrued" type="pc:Money" default="0">
-        <xs:annotation>
-          <xs:documentation>Defaults to 0.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="interest" type="pc:Money" default="0">
-        <xs:annotation>
-          <xs:documentation>Defaults to 0.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="fees" type="pc:Money" default="0">
-        <xs:annotation>
-          <xs:documentation>Defaults to 0.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="endingBal" type="pc:Money"/>
-      <xs:element name="isProjected" type="xs:boolean" default="false">
-        <xs:annotation>
-          <xs:documentation>Defaults to false.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
     </xs:sequence>
   </xs:complexType>
 
@@ -2409,7 +2106,7 @@
 
   <xs:complexType name="Position">
     <xs:annotation>
-      <xs:documentation>A fund's actual economic holding in a facility. This — not Deal — is what portfolio exposure, marks and returns roll up from. Unique: (fundId, facilityId).</xs:documentation>
+      <xs:documentation>A fund's actual economic holding in an instrument. This — not Deal — is what portfolio exposure, marks and returns roll up from. Unique: (fundId, instrumentId).</xs:documentation>
     </xs:annotation>
     <xs:sequence>
       <xs:element name="id" type="pc:Cuid">
@@ -2422,9 +2119,9 @@
           <xs:documentation>Foreign key → Fund.id.</xs:documentation>
         </xs:annotation>
       </xs:element>
-      <xs:element name="facilityId" type="pc:Cuid">
+      <xs:element name="instrumentId" type="pc:Cuid">
         <xs:annotation>
-          <xs:documentation>Foreign key → Facility.id.</xs:documentation>
+          <xs:documentation>Foreign key → Instrument.id.</xs:documentation>
         </xs:annotation>
       </xs:element>
       <xs:element name="currency" type="pc:Currency" default="USD">
@@ -2726,88 +2423,11 @@
     </xs:sequence>
   </xs:complexType>
 
-  <!-- ══════ 9. REFERENCE & MARKET DATA ════════════════════════════════════ -->
-
-  <xs:complexType name="ReferenceRate">
-    <xs:annotation>
-      <xs:documentation>Unique: (code, asOf).</xs:documentation>
-    </xs:annotation>
-    <xs:sequence>
-      <xs:element name="id" type="pc:Cuid">
-        <xs:annotation>
-          <xs:documentation>Primary key.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="code" type="xs:string">
-        <xs:annotation>
-          <xs:documentation>Note: SOFR3M | EURIBOR3M.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="asOf" type="xs:dateTime"/>
-      <xs:element name="ratePct" type="pc:RatePercent"/>
-    </xs:sequence>
-  </xs:complexType>
-
-  <xs:complexType name="FxRate">
-    <xs:annotation>
-      <xs:documentation>Unique: (base, quote, asOf).</xs:documentation>
-    </xs:annotation>
-    <xs:sequence>
-      <xs:element name="id" type="pc:Cuid">
-        <xs:annotation>
-          <xs:documentation>Primary key.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="base" type="pc:Currency"/>
-      <xs:element name="quote" type="pc:Currency"/>
-      <xs:element name="asOf" type="xs:dateTime"/>
-      <xs:element name="rate" type="pc:FxFactor"/>
-    </xs:sequence>
-  </xs:complexType>
-
-  <xs:complexType name="MarketComp">
-    <xs:annotation>
-      <xs:documentation>Persisted market comparables (e.g. Bloomberg DLEN direct-lending prints) so pricing context is queryable and historical, not a live-only API call.</xs:documentation>
-    </xs:annotation>
-    <xs:sequence>
-      <xs:element name="id" type="pc:Cuid">
-        <xs:annotation>
-          <xs:documentation>Primary key.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="borrowerName" type="xs:string"/>
-      <xs:element name="sector" type="xs:string" minOccurs="0"/>
-      <xs:element name="facilityType" type="pc:FacilityType" minOccurs="0"/>
-      <xs:element name="size" type="pc:Money" minOccurs="0"/>
-      <xs:element name="currency" type="pc:Currency" default="USD">
-        <xs:annotation>
-          <xs:documentation>Defaults to USD.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="spreadBps" type="xs:int" minOccurs="0"/>
-      <xs:element name="oidPct" type="pc:Percent" minOccurs="0"/>
-      <xs:element name="leverage" type="pc:Ratio" minOccurs="0"/>
-      <xs:element name="yieldPct" type="pc:Percent" minOccurs="0"/>
-      <xs:element name="pricedOn" type="xs:dateTime"/>
-      <xs:element name="source" type="xs:string" default="BLOOMBERG">
-        <xs:annotation>
-          <xs:documentation>Defaults to BLOOMBERG.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="idScheme" type="pc:IdScheme" minOccurs="0">
-        <xs:annotation>
-          <xs:documentation>The comp's own identifier when the print carries one (CUSIP, LoanX, FIGI), so repeated prints deduplicate and a comp can be matched to our own facility. A third party's instrument, so it is not an InstrumentIdentifier.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="idValue" type="xs:string" minOccurs="0"/>
-    </xs:sequence>
-  </xs:complexType>
-
-  <!-- ══════ 10. IDENTIFIERS & CROSS-REFERENCES ════════════════════════════ -->
+  <!-- ══════ 9. IDENTIFIERS & CROSS-REFERENCES ═════════════════════════════ -->
 
   <xs:complexType name="InstrumentIdentifier">
     <xs:annotation>
-      <xs:documentation>One identifier for exactly one entity, in force from validFrom until validTo. Each scheme is attached at its real level: LEI on the LegalEntity that borrows, Bloomberg company ID on the Company, CUSIP and LoanX on the Facility, the administrator's ID on the Position, the UCC-1 filing on the Collateral. Retired rows are kept, so &quot;what was this tranche called on 31 March?&quot; can be answered for marks and agent reconciliations. Enforced in the migration because Prisma cannot express them: exactly one target is set (CHECK num_nonnulls(...) = 1); a live value (validTo IS NULL) names one thing only, and a target holds one live value per scheme and namespace (partial unique indexes). Check digits are validated on write.</xs:documentation>
+      <xs:documentation>One identifier for exactly one link, in force from validFrom until validTo: CUSIP, ISIN, LoanX and FIGI on an Instrument; LEI, Bloomberg company ID and CIK on a Company, as the borrower of record; the administrator's ID on a Position. Retired rows are kept, so &quot;what was this tranche called on 31 March?&quot; can be answered for marks and agent reconciliations. Enforced in the migration because Prisma cannot express them: exactly one target is set (CHECK num_nonnulls(...) = 1); a live value (validTo IS NULL) names one thing only, and a target holds one live value per scheme and namespace (partial unique indexes). Check digits are validated on write.</xs:documentation>
     </xs:annotation>
     <xs:sequence>
       <xs:element name="id" type="pc:Cuid">
@@ -2825,24 +2445,14 @@
           <xs:documentation>Foreign key → Company.id.</xs:documentation>
         </xs:annotation>
       </xs:element>
-      <xs:element name="legalEntityId" type="pc:Cuid" minOccurs="0">
+      <xs:element name="instrumentId" type="pc:Cuid" minOccurs="0">
         <xs:annotation>
-          <xs:documentation>Foreign key → LegalEntity.id.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="facilityId" type="pc:Cuid" minOccurs="0">
-        <xs:annotation>
-          <xs:documentation>Foreign key → Facility.id.</xs:documentation>
+          <xs:documentation>Foreign key → Instrument.id.</xs:documentation>
         </xs:annotation>
       </xs:element>
       <xs:element name="positionId" type="pc:Cuid" minOccurs="0">
         <xs:annotation>
           <xs:documentation>Foreign key → Position.id.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="collateralId" type="pc:Cuid" minOccurs="0">
-        <xs:annotation>
-          <xs:documentation>Foreign key → Collateral.id.</xs:documentation>
         </xs:annotation>
       </xs:element>
       <xs:element name="scheme" type="pc:IdScheme"/>
@@ -2853,7 +2463,7 @@
       </xs:element>
       <xs:element name="namespace" type="xs:string" default="">
         <xs:annotation>
-          <xs:documentation>The issuer, for schemes unique only inside one system (agent, WSO instance, filing office). Empty rather than NULL so it takes part in the uniqueness rule. Defaults to an empty string.</xs:documentation>
+          <xs:documentation>The issuer, for schemes unique only inside one system (agent, WSO instance). Empty rather than NULL so it takes part in the uniqueness rule. Defaults to an empty string.</xs:documentation>
         </xs:annotation>
       </xs:element>
       <xs:element name="validFrom" type="xs:dateTime"/>
@@ -2944,10 +2554,10 @@
             </xs:sequence>
           </xs:complexType>
         </xs:element>
-        <xs:element name="Industries" minOccurs="0">
+        <xs:element name="Companies" minOccurs="0">
           <xs:complexType>
             <xs:sequence>
-              <xs:element name="Industry" type="pc:Industry" minOccurs="0" maxOccurs="unbounded"/>
+              <xs:element name="Company" type="pc:Company" minOccurs="0" maxOccurs="unbounded"/>
             </xs:sequence>
           </xs:complexType>
         </xs:element>
@@ -2958,20 +2568,6 @@
             </xs:sequence>
           </xs:complexType>
         </xs:element>
-        <xs:element name="Companies" minOccurs="0">
-          <xs:complexType>
-            <xs:sequence>
-              <xs:element name="Company" type="pc:Company" minOccurs="0" maxOccurs="unbounded"/>
-            </xs:sequence>
-          </xs:complexType>
-        </xs:element>
-        <xs:element name="LegalEntities" minOccurs="0">
-          <xs:complexType>
-            <xs:sequence>
-              <xs:element name="LegalEntity" type="pc:LegalEntity" minOccurs="0" maxOccurs="unbounded"/>
-            </xs:sequence>
-          </xs:complexType>
-        </xs:element>
         <xs:element name="Advisors" minOccurs="0">
           <xs:complexType>
             <xs:sequence>
@@ -2979,10 +2575,24 @@
             </xs:sequence>
           </xs:complexType>
         </xs:element>
-        <xs:element name="Contacts" minOccurs="0">
+        <xs:element name="Lenders" minOccurs="0">
           <xs:complexType>
             <xs:sequence>
-              <xs:element name="Contact" type="pc:Contact" minOccurs="0" maxOccurs="unbounded"/>
+              <xs:element name="Lender" type="pc:Lender" minOccurs="0" maxOccurs="unbounded"/>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+        <xs:element name="Instruments" minOccurs="0">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="Instrument" type="pc:Instrument" minOccurs="0" maxOccurs="unbounded"/>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+        <xs:element name="CollateralItems" minOccurs="0">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="Collateral" type="pc:Collateral" minOccurs="0" maxOccurs="unbounded"/>
             </xs:sequence>
           </xs:complexType>
         </xs:element>
@@ -3140,38 +2750,10 @@
             </xs:sequence>
           </xs:complexType>
         </xs:element>
-        <xs:element name="FacilityPricings" minOccurs="0">
+        <xs:element name="TermSheets" minOccurs="0">
           <xs:complexType>
             <xs:sequence>
-              <xs:element name="FacilityPricing" type="pc:FacilityPricing" minOccurs="0" maxOccurs="unbounded"/>
-            </xs:sequence>
-          </xs:complexType>
-        </xs:element>
-        <xs:element name="FacilityObligors" minOccurs="0">
-          <xs:complexType>
-            <xs:sequence>
-              <xs:element name="FacilityObligor" type="pc:FacilityObligor" minOccurs="0" maxOccurs="unbounded"/>
-            </xs:sequence>
-          </xs:complexType>
-        </xs:element>
-        <xs:element name="CollateralItems" minOccurs="0">
-          <xs:complexType>
-            <xs:sequence>
-              <xs:element name="Collateral" type="pc:Collateral" minOccurs="0" maxOccurs="unbounded"/>
-            </xs:sequence>
-          </xs:complexType>
-        </xs:element>
-        <xs:element name="Lenders" minOccurs="0">
-          <xs:complexType>
-            <xs:sequence>
-              <xs:element name="Lender" type="pc:Lender" minOccurs="0" maxOccurs="unbounded"/>
-            </xs:sequence>
-          </xs:complexType>
-        </xs:element>
-        <xs:element name="FacilityParticipations" minOccurs="0">
-          <xs:complexType>
-            <xs:sequence>
-              <xs:element name="FacilityParticipation" type="pc:FacilityParticipation" minOccurs="0" maxOccurs="unbounded"/>
+              <xs:element name="TermSheet" type="pc:TermSheet" minOccurs="0" maxOccurs="unbounded"/>
             </xs:sequence>
           </xs:complexType>
         </xs:element>
@@ -3186,13 +2768,6 @@
           <xs:complexType>
             <xs:sequence>
               <xs:element name="AmendmentConsent" type="pc:AmendmentConsent" minOccurs="0" maxOccurs="unbounded"/>
-            </xs:sequence>
-          </xs:complexType>
-        </xs:element>
-        <xs:element name="FacilityCashflows" minOccurs="0">
-          <xs:complexType>
-            <xs:sequence>
-              <xs:element name="FacilityCashflow" type="pc:FacilityCashflow" minOccurs="0" maxOccurs="unbounded"/>
             </xs:sequence>
           </xs:complexType>
         </xs:element>
@@ -3336,27 +2911,6 @@
             </xs:sequence>
           </xs:complexType>
         </xs:element>
-        <xs:element name="ReferenceRates" minOccurs="0">
-          <xs:complexType>
-            <xs:sequence>
-              <xs:element name="ReferenceRate" type="pc:ReferenceRate" minOccurs="0" maxOccurs="unbounded"/>
-            </xs:sequence>
-          </xs:complexType>
-        </xs:element>
-        <xs:element name="FxRates" minOccurs="0">
-          <xs:complexType>
-            <xs:sequence>
-              <xs:element name="FxRate" type="pc:FxRate" minOccurs="0" maxOccurs="unbounded"/>
-            </xs:sequence>
-          </xs:complexType>
-        </xs:element>
-        <xs:element name="MarketComps" minOccurs="0">
-          <xs:complexType>
-            <xs:sequence>
-              <xs:element name="MarketComp" type="pc:MarketComp" minOccurs="0" maxOccurs="unbounded"/>
-            </xs:sequence>
-          </xs:complexType>
-        </xs:element>
         <xs:element name="InstrumentIdentifiers" minOccurs="0">
           <xs:complexType>
             <xs:sequence>
@@ -3406,10 +2960,6 @@
     </xs:key>
     <xs:key name="key_Company_id">
       <xs:selector xpath="pc:Companies/pc:Company"/>
-      <xs:field xpath="pc:id"/>
-    </xs:key>
-    <xs:key name="key_Contact_id">
-      <xs:selector xpath="pc:Contacts/pc:Contact"/>
       <xs:field xpath="pc:id"/>
     </xs:key>
     <xs:key name="key_CovenantDefinition_id">
@@ -3464,24 +3014,8 @@
       <xs:selector xpath="pc:EbitdaAdjustments/pc:EbitdaAdjustment"/>
       <xs:field xpath="pc:id"/>
     </xs:key>
-    <xs:key name="key_FacilityCashflow_id">
-      <xs:selector xpath="pc:FacilityCashflows/pc:FacilityCashflow"/>
-      <xs:field xpath="pc:id"/>
-    </xs:key>
     <xs:key name="key_Facility_id">
       <xs:selector xpath="pc:Facilities/pc:Facility"/>
-      <xs:field xpath="pc:id"/>
-    </xs:key>
-    <xs:key name="key_FacilityObligor_id">
-      <xs:selector xpath="pc:FacilityObligors/pc:FacilityObligor"/>
-      <xs:field xpath="pc:id"/>
-    </xs:key>
-    <xs:key name="key_FacilityParticipation_id">
-      <xs:selector xpath="pc:FacilityParticipations/pc:FacilityParticipation"/>
-      <xs:field xpath="pc:id"/>
-    </xs:key>
-    <xs:key name="key_FacilityPricing_id">
-      <xs:selector xpath="pc:FacilityPricings/pc:FacilityPricing"/>
       <xs:field xpath="pc:id"/>
     </xs:key>
     <xs:key name="key_FieldDefinition_code">
@@ -3508,10 +3042,6 @@
       <xs:selector xpath="pc:Funds/pc:Fund"/>
       <xs:field xpath="pc:id"/>
     </xs:key>
-    <xs:key name="key_FxRate_id">
-      <xs:selector xpath="pc:FxRates/pc:FxRate"/>
-      <xs:field xpath="pc:id"/>
-    </xs:key>
     <xs:key name="key_ICAgendaItem_id">
       <xs:selector xpath="pc:ICAgendaItems/pc:ICAgendaItem"/>
       <xs:field xpath="pc:id"/>
@@ -3524,8 +3054,8 @@
       <xs:selector xpath="pc:ICVotes/pc:ICVote"/>
       <xs:field xpath="pc:id"/>
     </xs:key>
-    <xs:key name="key_Industry_id">
-      <xs:selector xpath="pc:Industries/pc:Industry"/>
+    <xs:key name="key_Instrument_id">
+      <xs:selector xpath="pc:Instruments/pc:Instrument"/>
       <xs:field xpath="pc:id"/>
     </xs:key>
     <xs:key name="key_InstrumentIdentifier_id">
@@ -3536,16 +3066,8 @@
       <xs:selector xpath="pc:KpiSnapshots/pc:KpiSnapshot"/>
       <xs:field xpath="pc:id"/>
     </xs:key>
-    <xs:key name="key_LegalEntity_id">
-      <xs:selector xpath="pc:LegalEntities/pc:LegalEntity"/>
-      <xs:field xpath="pc:id"/>
-    </xs:key>
     <xs:key name="key_Lender_id">
       <xs:selector xpath="pc:Lenders/pc:Lender"/>
-      <xs:field xpath="pc:id"/>
-    </xs:key>
-    <xs:key name="key_MarketComp_id">
-      <xs:selector xpath="pc:MarketComps/pc:MarketComp"/>
       <xs:field xpath="pc:id"/>
     </xs:key>
     <xs:key name="key_MemoSection_id">
@@ -3592,10 +3114,6 @@
       <xs:selector xpath="pc:RatingHistories/pc:RatingHistory"/>
       <xs:field xpath="pc:id"/>
     </xs:key>
-    <xs:key name="key_ReferenceRate_id">
-      <xs:selector xpath="pc:ReferenceRates/pc:ReferenceRate"/>
-      <xs:field xpath="pc:id"/>
-    </xs:key>
     <xs:key name="key_ReportingDelivery_id">
       <xs:selector xpath="pc:ReportingDeliveries/pc:ReportingDelivery"/>
       <xs:field xpath="pc:id"/>
@@ -3632,6 +3150,10 @@
       <xs:selector xpath="pc:TeamMemberships/pc:TeamMembership"/>
       <xs:field xpath="pc:id"/>
     </xs:key>
+    <xs:key name="key_TermSheet_id">
+      <xs:selector xpath="pc:TermSheets/pc:TermSheet"/>
+      <xs:field xpath="pc:id"/>
+    </xs:key>
     <xs:key name="key_User_id">
       <xs:selector xpath="pc:Users/pc:User"/>
       <xs:field xpath="pc:id"/>
@@ -3649,7 +3171,7 @@
       <xs:field xpath="pc:id"/>
     </xs:key>
 
-    <!-- Foreign keys: 128 references, mirroring the relational model. -->
+    <!-- Foreign keys: 117 references, mirroring the relational model. -->
     <xs:keyref name="fk_ActivityEvent_actorId" refer="pc:key_User_id">
       <xs:selector xpath="pc:ActivityEvents/pc:ActivityEvent"/>
       <xs:field xpath="pc:actorId"/>
@@ -3657,6 +3179,10 @@
     <xs:keyref name="fk_ActivityEvent_dealId" refer="pc:key_Deal_id">
       <xs:selector xpath="pc:ActivityEvents/pc:ActivityEvent"/>
       <xs:field xpath="pc:dealId"/>
+    </xs:keyref>
+    <xs:keyref name="fk_Advisor_orgId" refer="pc:key_Organization_id">
+      <xs:selector xpath="pc:Advisors/pc:Advisor"/>
+      <xs:field xpath="pc:orgId"/>
     </xs:keyref>
     <xs:keyref name="fk_Alert_assigneeId" refer="pc:key_User_id">
       <xs:selector xpath="pc:Alerts/pc:Alert"/>
@@ -3694,9 +3220,9 @@
       <xs:selector xpath="pc:Amendments/pc:Amendment"/>
       <xs:field xpath="pc:dealId"/>
     </xs:keyref>
-    <xs:keyref name="fk_Amendment_facilityId" refer="pc:key_Facility_id">
+    <xs:keyref name="fk_Amendment_instrumentId" refer="pc:key_Instrument_id">
       <xs:selector xpath="pc:Amendments/pc:Amendment"/>
-      <xs:field xpath="pc:facilityId"/>
+      <xs:field xpath="pc:instrumentId"/>
     </xs:keyref>
     <xs:keyref name="fk_AuditEvent_actorId" refer="pc:key_User_id">
       <xs:selector xpath="pc:AuditEvents/pc:AuditEvent"/>
@@ -3706,13 +3232,9 @@
       <xs:selector xpath="pc:AuditEvents/pc:AuditEvent"/>
       <xs:field xpath="pc:orgId"/>
     </xs:keyref>
-    <xs:keyref name="fk_Collateral_facilityId" refer="pc:key_Facility_id">
+    <xs:keyref name="fk_Collateral_dealId" refer="pc:key_Deal_id">
       <xs:selector xpath="pc:CollateralItems/pc:Collateral"/>
-      <xs:field xpath="pc:facilityId"/>
-    </xs:keyref>
-    <xs:keyref name="fk_Collateral_legalEntityId" refer="pc:key_LegalEntity_id">
-      <xs:selector xpath="pc:CollateralItems/pc:Collateral"/>
-      <xs:field xpath="pc:legalEntityId"/>
+      <xs:field xpath="pc:dealId"/>
     </xs:keyref>
     <xs:keyref name="fk_Comment_authorId" refer="pc:key_User_id">
       <xs:selector xpath="pc:Comments/pc:Comment"/>
@@ -3726,29 +3248,9 @@
       <xs:selector xpath="pc:Comments/pc:Comment"/>
       <xs:field xpath="pc:parentId"/>
     </xs:keyref>
-    <xs:keyref name="fk_Company_industryId" refer="pc:key_Industry_id">
-      <xs:selector xpath="pc:Companies/pc:Company"/>
-      <xs:field xpath="pc:industryId"/>
-    </xs:keyref>
     <xs:keyref name="fk_Company_orgId" refer="pc:key_Organization_id">
       <xs:selector xpath="pc:Companies/pc:Company"/>
       <xs:field xpath="pc:orgId"/>
-    </xs:keyref>
-    <xs:keyref name="fk_Company_sponsorId" refer="pc:key_Sponsor_id">
-      <xs:selector xpath="pc:Companies/pc:Company"/>
-      <xs:field xpath="pc:sponsorId"/>
-    </xs:keyref>
-    <xs:keyref name="fk_Contact_advisorId" refer="pc:key_Advisor_id">
-      <xs:selector xpath="pc:Contacts/pc:Contact"/>
-      <xs:field xpath="pc:advisorId"/>
-    </xs:keyref>
-    <xs:keyref name="fk_Contact_companyId" refer="pc:key_Company_id">
-      <xs:selector xpath="pc:Contacts/pc:Contact"/>
-      <xs:field xpath="pc:companyId"/>
-    </xs:keyref>
-    <xs:keyref name="fk_Contact_sponsorId" refer="pc:key_Sponsor_id">
-      <xs:selector xpath="pc:Contacts/pc:Contact"/>
-      <xs:field xpath="pc:sponsorId"/>
     </xs:keyref>
     <xs:keyref name="fk_CovenantDefinition_dealId" refer="pc:key_Deal_id">
       <xs:selector xpath="pc:CovenantDefinitions/pc:CovenantDefinition"/>
@@ -3874,33 +3376,13 @@
       <xs:selector xpath="pc:EbitdaAdjustments/pc:EbitdaAdjustment"/>
       <xs:field xpath="pc:createdById"/>
     </xs:keyref>
-    <xs:keyref name="fk_FacilityCashflow_facilityId" refer="pc:key_Facility_id">
-      <xs:selector xpath="pc:FacilityCashflows/pc:FacilityCashflow"/>
-      <xs:field xpath="pc:facilityId"/>
-    </xs:keyref>
     <xs:keyref name="fk_Facility_dealId" refer="pc:key_Deal_id">
       <xs:selector xpath="pc:Facilities/pc:Facility"/>
       <xs:field xpath="pc:dealId"/>
     </xs:keyref>
-    <xs:keyref name="fk_FacilityObligor_facilityId" refer="pc:key_Facility_id">
-      <xs:selector xpath="pc:FacilityObligors/pc:FacilityObligor"/>
-      <xs:field xpath="pc:facilityId"/>
-    </xs:keyref>
-    <xs:keyref name="fk_FacilityObligor_legalEntityId" refer="pc:key_LegalEntity_id">
-      <xs:selector xpath="pc:FacilityObligors/pc:FacilityObligor"/>
-      <xs:field xpath="pc:legalEntityId"/>
-    </xs:keyref>
-    <xs:keyref name="fk_FacilityParticipation_facilityId" refer="pc:key_Facility_id">
-      <xs:selector xpath="pc:FacilityParticipations/pc:FacilityParticipation"/>
-      <xs:field xpath="pc:facilityId"/>
-    </xs:keyref>
-    <xs:keyref name="fk_FacilityParticipation_lenderId" refer="pc:key_Lender_id">
-      <xs:selector xpath="pc:FacilityParticipations/pc:FacilityParticipation"/>
-      <xs:field xpath="pc:lenderId"/>
-    </xs:keyref>
-    <xs:keyref name="fk_FacilityPricing_facilityId" refer="pc:key_Facility_id">
-      <xs:selector xpath="pc:FacilityPricings/pc:FacilityPricing"/>
-      <xs:field xpath="pc:facilityId"/>
+    <xs:keyref name="fk_Facility_instrumentId" refer="pc:key_Instrument_id">
+      <xs:selector xpath="pc:Facilities/pc:Facility"/>
+      <xs:field xpath="pc:instrumentId"/>
     </xs:keyref>
     <xs:keyref name="fk_FinancialPeriod_companyId" refer="pc:key_Company_id">
       <xs:selector xpath="pc:FinancialPeriods/pc:FinancialPeriod"/>
@@ -3942,6 +3424,10 @@
       <xs:selector xpath="pc:ICAgendaItems/pc:ICAgendaItem"/>
       <xs:field xpath="pc:meetingId"/>
     </xs:keyref>
+    <xs:keyref name="fk_ICAgendaItem_termSheetId" refer="pc:key_TermSheet_id">
+      <xs:selector xpath="pc:ICAgendaItems/pc:ICAgendaItem"/>
+      <xs:field xpath="pc:termSheetId"/>
+    </xs:keyref>
     <xs:keyref name="fk_ICVote_dealId" refer="pc:key_Deal_id">
       <xs:selector xpath="pc:ICVotes/pc:ICVote"/>
       <xs:field xpath="pc:dealId"/>
@@ -3954,25 +3440,13 @@
       <xs:selector xpath="pc:ICVotes/pc:ICVote"/>
       <xs:field xpath="pc:voterId"/>
     </xs:keyref>
-    <xs:keyref name="fk_Industry_parentId" refer="pc:key_Industry_id">
-      <xs:selector xpath="pc:Industries/pc:Industry"/>
-      <xs:field xpath="pc:parentId"/>
-    </xs:keyref>
-    <xs:keyref name="fk_InstrumentIdentifier_collateralId" refer="pc:key_Collateral_id">
-      <xs:selector xpath="pc:InstrumentIdentifiers/pc:InstrumentIdentifier"/>
-      <xs:field xpath="pc:collateralId"/>
-    </xs:keyref>
     <xs:keyref name="fk_InstrumentIdentifier_companyId" refer="pc:key_Company_id">
       <xs:selector xpath="pc:InstrumentIdentifiers/pc:InstrumentIdentifier"/>
       <xs:field xpath="pc:companyId"/>
     </xs:keyref>
-    <xs:keyref name="fk_InstrumentIdentifier_facilityId" refer="pc:key_Facility_id">
+    <xs:keyref name="fk_InstrumentIdentifier_instrumentId" refer="pc:key_Instrument_id">
       <xs:selector xpath="pc:InstrumentIdentifiers/pc:InstrumentIdentifier"/>
-      <xs:field xpath="pc:facilityId"/>
-    </xs:keyref>
-    <xs:keyref name="fk_InstrumentIdentifier_legalEntityId" refer="pc:key_LegalEntity_id">
-      <xs:selector xpath="pc:InstrumentIdentifiers/pc:InstrumentIdentifier"/>
-      <xs:field xpath="pc:legalEntityId"/>
+      <xs:field xpath="pc:instrumentId"/>
     </xs:keyref>
     <xs:keyref name="fk_InstrumentIdentifier_orgId" refer="pc:key_Organization_id">
       <xs:selector xpath="pc:InstrumentIdentifiers/pc:InstrumentIdentifier"/>
@@ -3986,17 +3460,13 @@
       <xs:selector xpath="pc:InstrumentIdentifiers/pc:InstrumentIdentifier"/>
       <xs:field xpath="pc:verifiedById"/>
     </xs:keyref>
+    <xs:keyref name="fk_Instrument_orgId" refer="pc:key_Organization_id">
+      <xs:selector xpath="pc:Instruments/pc:Instrument"/>
+      <xs:field xpath="pc:orgId"/>
+    </xs:keyref>
     <xs:keyref name="fk_KpiSnapshot_orgId" refer="pc:key_Organization_id">
       <xs:selector xpath="pc:KpiSnapshots/pc:KpiSnapshot"/>
       <xs:field xpath="pc:orgId"/>
-    </xs:keyref>
-    <xs:keyref name="fk_LegalEntity_companyId" refer="pc:key_Company_id">
-      <xs:selector xpath="pc:LegalEntities/pc:LegalEntity"/>
-      <xs:field xpath="pc:companyId"/>
-    </xs:keyref>
-    <xs:keyref name="fk_LegalEntity_parentId" refer="pc:key_LegalEntity_id">
-      <xs:selector xpath="pc:LegalEntities/pc:LegalEntity"/>
-      <xs:field xpath="pc:parentId"/>
     </xs:keyref>
     <xs:keyref name="fk_Lender_orgId" refer="pc:key_Organization_id">
       <xs:selector xpath="pc:Lenders/pc:Lender"/>
@@ -4034,13 +3504,13 @@
       <xs:selector xpath="pc:OrgMemberships/pc:OrgMembership"/>
       <xs:field xpath="pc:userId"/>
     </xs:keyref>
-    <xs:keyref name="fk_Position_facilityId" refer="pc:key_Facility_id">
-      <xs:selector xpath="pc:Positions/pc:Position"/>
-      <xs:field xpath="pc:facilityId"/>
-    </xs:keyref>
     <xs:keyref name="fk_Position_fundId" refer="pc:key_Fund_id">
       <xs:selector xpath="pc:Positions/pc:Position"/>
       <xs:field xpath="pc:fundId"/>
+    </xs:keyref>
+    <xs:keyref name="fk_Position_instrumentId" refer="pc:key_Instrument_id">
+      <xs:selector xpath="pc:Positions/pc:Position"/>
+      <xs:field xpath="pc:instrumentId"/>
     </xs:keyref>
     <xs:keyref name="fk_PositionTransaction_positionId" refer="pc:key_Position_id">
       <xs:selector xpath="pc:PositionTransactions/pc:PositionTransaction"/>
@@ -4129,6 +3599,14 @@
     <xs:keyref name="fk_Team_orgId" refer="pc:key_Organization_id">
       <xs:selector xpath="pc:Teams/pc:Team"/>
       <xs:field xpath="pc:orgId"/>
+    </xs:keyref>
+    <xs:keyref name="fk_TermSheet_authorId" refer="pc:key_User_id">
+      <xs:selector xpath="pc:TermSheets/pc:TermSheet"/>
+      <xs:field xpath="pc:authorId"/>
+    </xs:keyref>
+    <xs:keyref name="fk_TermSheet_dealId" refer="pc:key_Deal_id">
+      <xs:selector xpath="pc:TermSheets/pc:TermSheet"/>
+      <xs:field xpath="pc:dealId"/>
     </xs:keyref>
     <xs:keyref name="fk_Valuation_approvedById" refer="pc:key_User_id">
       <xs:selector xpath="pc:Valuations/pc:Valuation"/>

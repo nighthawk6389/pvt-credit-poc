@@ -1,11 +1,16 @@
 # Canonical Data Model — Private Credit Deal Room & Dashboard
 
-A clean-slate reference model covering everything a deal room dashboard needs:
-**identity & access**, **counterparties**, **pipeline**, **data room**,
-**structuring & syndication**, **covenant monitoring**, **fund/position
-economics**, and the **time-series history** that dashboard analytics depend on.
+A clean-slate reference model for a deal room and its dashboard, designed as an
+**overlay**. It owns the workflow and the state that cuts across systems:
+**pipeline**, **team & access**, **data room**, **committee decisions**,
+**covenant monitoring**, **fund positions**, **alerts**, and the **history**
+dashboards trend. Everything another system is the source of record for —
+**borrowers, sponsors, advisors and lenders** (entity master), **instruments
+and their loan terms** (security master), **collateral** (collateral system)
+and **market data** (the vendor) — it holds only as a link, and reads from the
+source. See [the boundary](#the-boundary-what-this-model-owns-and-what-it-links-to).
 
-- **Schema:** [`schema.canonical.prisma`](./schema.canonical.prisma) — 69 models, 41 enums, validated.
+- **Schema:** [`schema.canonical.prisma`](./schema.canonical.prisma) — 61 models, 36 enums, validated.
 - **XSD view:** [`schema.canonical.xsd`](./schema.canonical.xsd) — the same model as XML Schema,
   generated from the Prisma file. Often the faster read: types, enums and foreign keys are all
   spelled out in one place. See [§8](#8-xsd-view).
@@ -38,16 +43,55 @@ CANONICAL_DATABASE_URL="postgresql://u:p@localhost:5432/canonical" \
 
 ## 1. Design principles
 
-Six rules drive most of the structural differences from a naive model.
+### The boundary: what this model owns, and what it links to
+
+The deal room is the source of record for its own workflow and for state that
+spans systems. For everything else it holds a link and reads the source.
+
+| Area | Owned here | Linked — read from the system of record |
+|---|---|---|
+| Counterparties | which sponsor and advisors are on a deal, and the advisor's mandate | `Company`, `Sponsor`, `Advisor`, `Lender` → **entity master**: names, industry, ownership, legal-entity structure, fiscal calendar |
+| The financing | the tranches a deal proposes (`Facility`), the term-sheet versions put to committee (`TermSheet`), the amendment and consent workflow | `Instrument` → **security master**: every booked term — pricing, rate index and fixings, maturity, amortisation, call protection, fees, the lender register, the cash-flow schedule |
+| Collateral | which collateral a deal's diligence and monitoring cover | `Collateral` → **collateral system**: what it is, what it is worth, what it secures |
+| Credit monitoring | covenant definitions, tests, reconciliation, the add-back ledger, reporting deliveries, financial facts as received and reconciled, internal ratings, watchlist, alerts | — |
+| Portfolio | funds, allocations, positions, marks, returns | positions point at `Instrument` |
+| Market data | — | FX, reference rates, comps → **the vendor** (Bloomberg) |
+
+A link row is deliberately bare: `id` (so local foreign keys work), `orgId`, and
+`masterRef` — the record's ID in its system of record. No names, descriptions,
+terms or values. Showing a borrower's name in a list is the integration layer's
+job (a read-through cache), not something this model stores, so there is no
+second copy to drift.
+
+Three calls on the boundary are worth knowing, because each could reasonably go
+the other way:
+
+- **Covenant definitions stay here.** A credit agreement states the covenant
+  levels, but encoding them as formulas, step-down schedules, tests and
+  reconciliations is the monitoring workflow this model exists for. If your
+  security master carries covenant levels, the threshold schedule can be read
+  from it instead.
+- **Financial facts stay here.** `FundamentalFact` and `EbitdaAdjustment` record
+  what the borrower reported, what Bloomberg returned and what we overrode, at
+  the time a test ran. That is the evidence behind each covenant result, not
+  reference data about the borrower.
+- **Positions and marks stay here.** They are our holdings and our valuation
+  decisions. If a fund administrator is the accounting book of record for
+  positions, `Position` becomes a link in the same way.
+
+### Rules applied throughout
+
+Seven rules drive most of the structural differences from a naive model.
 
 | # | Principle | Why it matters |
 |---|---|---|
 | 1 | **Money is `Decimal(20,4)`, never `Float`** | Float silently loses pennies when summing a portfolio. Ratios use `Decimal(18,6)`, percentages `Decimal(9,4)`. |
-| 2 | **Anything trended is an event table, not a mutable scalar** | A dashboard cannot chart what the database overwrites. Stage, rating, pricing, marks and document versions are all append-only histories. |
+| 2 | **Anything trended is an event table, not a mutable scalar** | A dashboard cannot chart what the database overwrites. Stage, rating, marks and document versions are all append-only histories. (Term history such as repricings is the security master's.) |
 | 3 | **Every actor is a `User` FK** | Free-text `uploadedBy`/`assignee`/`actor` strings cannot be filtered, permissioned, or attributed. |
 | 4 | **Multi-tenant by `orgId` on root aggregates** | Org scoping at the aggregate root keeps every dashboard query naturally partitioned. |
-| 5 | **Amounts travel with a currency; FX is first-class** | A single-currency assumption is unpickable later. |
+| 5 | **Amounts travel with a currency** | A single-currency assumption is unpickable later. FX rates are market data, read from the vendor at roll-up time. |
 | 6 | **Real-world identifiers are effective-dated rows, never columns** | A tranche has no CUSIP at sourcing, gains one at close, and an amend-and-extend retires its LoanX ID. A nullable `cusip` column can represent none of that. See [`InstrumentIdentifier`](#37-identifiers--cross-references). |
+| 7 | **Systems of record are linked, never copied** | A copy of a borrower's details or a loan's terms is stale the first time the source changes. A link cannot be. |
 
 Two further choices are worth calling out:
 
@@ -63,24 +107,24 @@ Two further choices are worth calling out:
 
 ## 2. Domain map
 
-| # | Domain | Models | Core entities |
+| # | Domain | Models | Entities |
 |---|---|---:|---|
-| 1 | Identity, access & audit | 9 | `Organization` `User` `OrgMembership` `Team` `DealTeamMember` `WallCrossEvent` `AuditEvent` `ActivityEvent` |
-| 2 | Counterparties & obligors | 6 | `Sponsor` `Company` `LegalEntity` `Industry` `Advisor` `Contact` |
-| 3 | Deal & pipeline | 8 | `Deal` `StageTransition` `Milestone` `ICMeeting` `ICVote` `CreditMemo` `MemoVersion` |
-| 4 | Collaboration | 3 | `Task` `Note` `Comment` |
-| 5 | Data room & diligence | 7 | `Folder` `Document` `DocumentVersion` `DocumentAccessGrant` `DocumentEvent` `DiligenceItem` `QAThread` |
-| 6 | Facilities & syndication | 9 | `Facility` `FacilityPricing` `FacilityObligor` `Collateral` `Lender` `FacilityParticipation` `Amendment` `AmendmentConsent` `FacilityCashflow` |
-| 7 | Financials & covenants | 9 | `FieldDefinition` `FinancialPeriod` `FundamentalFact` `EbitdaAdjustment` `CovenantDefinition` `CovenantThresholdStep` `CovenantTest` `ReportingObligation` `ReportingDelivery` |
-| 8 | Funds, positions & returns | 6 | `Fund` `Allocation` `Position` `PositionTransaction` `Valuation` `ReturnSnapshot` |
-| 9 | Risk, alerts & reference data | 8 | `RatingHistory` `WatchlistEvent` `KpiSnapshot` `Alert` `SavedView` `ReferenceRate` `FxRate` `MarketComp` |
-| 10 | Identifiers & cross-references | 1 | `InstrumentIdentifier` |
+| 1 | Identity, access & audit | 9 | `Organization` `User` `OrgMembership` `Team` `TeamMembership` `DealTeamMember` `WallCrossEvent` `AuditEvent` `ActivityEvent` |
+| 2 | Links to systems of record | 6 | `Company` `Sponsor` `Advisor` `Lender` `Instrument` `Collateral` |
+| 3 | Deal, pipeline & committee | 13 | `Deal` `StageTransition` `Milestone` `DealAdvisor` `ICMeeting` `ICAgendaItem` `ICVote` `CreditMemo` `MemoVersion` `MemoSection` `Task` `Note` `Comment` |
+| 4 | Data room & diligence | 8 | `Folder` `Document` `DocumentVersion` `DocumentAccessGrant` `DocumentEvent` `DiligenceItem` `QAThread` `QAMessage` |
+| 5 | Tranches, term sheets & amendments | 4 | `Facility` `TermSheet` `Amendment` `AmendmentConsent` |
+| 6 | Financials & covenants | 9 | `FieldDefinition` `FinancialPeriod` `FundamentalFact` `EbitdaAdjustment` `CovenantDefinition` `CovenantThresholdStep` `CovenantTest` `ReportingObligation` `ReportingDelivery` |
+| 7 | Funds, positions & returns | 6 | `Fund` `Allocation` `Position` `PositionTransaction` `Valuation` `ReturnSnapshot` |
+| 8 | Risk, alerts & dashboard support | 5 | `RatingHistory` `WatchlistEvent` `KpiSnapshot` `Alert` `SavedView` |
+| 9 | Identifiers & cross-references | 1 | `InstrumentIdentifier` |
 
 ---
 
 ## 3. Entity–relationship diagrams
 
-Split by domain — one diagram for 69 models would be unreadable.
+Split by domain — one diagram for 61 models would be unreadable. Links (domain 2) are drawn
+where they are used.
 
 ### 3.1 Identity, access & the information barrier
 
@@ -99,15 +143,13 @@ erDiagram
   Deal ||--o{ ActivityEvent : "feeds"
 ```
 
-### 3.2 Counterparties, pipeline & IC
+### 3.2 Links, pipeline & committee
 
 ```mermaid
 erDiagram
-  Sponsor ||--o{ Company : "backs"
-  Industry ||--o{ Company : "classifies"
-  Company ||--o{ LegalEntity : "comprises"
   Company ||--o{ Deal : "is subject of"
   Sponsor ||--o{ Deal : "sponsors"
+  Deal ||--o{ Collateral : "diligences"
   Deal ||--o{ StageTransition : "moves through"
   Deal ||--o{ Milestone : "tracks"
   Deal ||--o{ DealAdvisor : "engages"
@@ -137,22 +179,25 @@ erDiagram
   QAThread ||--o{ QAMessage : "messages"
 ```
 
-### 3.4 Facilities, syndication & amendments
+### 3.4 Tranches, term sheets & amendments
 
 ```mermaid
 erDiagram
-  Deal ||--o{ Facility : "comprises"
-  Facility ||--o{ FacilityPricing : "repriced over time"
-  Facility ||--o{ FacilityObligor : "obligated by"
-  LegalEntity ||--o{ FacilityObligor : "is obligor"
-  Facility ||--o{ Collateral : "secured by"
-  Facility ||--o{ FacilityParticipation : "syndicated to"
-  Lender ||--o{ FacilityParticipation : "participates"
-  Facility ||--o{ FacilityCashflow : "amortizes"
+  Deal ||--o{ Facility : "proposes"
+  Instrument |o--o{ Facility : "books"
+  Deal ||--o{ TermSheet : "versions"
+  TermSheet |o--o{ ICAgendaItem : "put to committee as"
   Deal ||--o{ Amendment : "amended by"
+  Instrument |o--o{ Amendment : "amends"
   Amendment ||--o{ AmendmentConsent : "consented by"
-  Lender ||--o{ AmendmentConsent : "votes"
+  Lender |o--o{ AmendmentConsent : "votes"
 ```
+
+A `Facility` is a tranche as this deal tracks it. While it is a proposal its terms
+live in the deal's `TermSheet`; once booked it points at an `Instrument`, and the
+terms are read from the security master. Committee decisions point at the
+`TermSheet` version they approved, which is what makes "approved versus booked"
+checkable once the terms live elsewhere.
 
 ### 3.5 Financials, facts & covenants
 
@@ -177,7 +222,7 @@ erDiagram
   Fund ||--o{ Allocation : "allocated"
   Facility ||--o{ Allocation : "split across"
   Fund ||--o{ Position : "holds"
-  Facility ||--o{ Position : "held as"
+  Instrument ||--o{ Position : "held as"
   Position ||--o{ PositionTransaction : "cash flows"
   Position ||--o{ Valuation : "marked at"
   Position ||--o{ ReturnSnapshot : "performance"
@@ -190,19 +235,21 @@ erDiagram
 
 ```mermaid
 erDiagram
-  Company ||--o{ InstrumentIdentifier : "Bloomberg company ID, CIK"
-  LegalEntity ||--o{ InstrumentIdentifier : "LEI"
-  Facility ||--o{ InstrumentIdentifier : "CUSIP, ISIN, LoanX, FIGI, agent ref"
+  Company ||--o{ InstrumentIdentifier : "Bloomberg company ID, LEI, CIK"
+  Instrument ||--o{ InstrumentIdentifier : "CUSIP, ISIN, LoanX, FIGI, agent ref"
   Position ||--o{ InstrumentIdentifier : "fund admin ID"
-  Collateral ||--o{ InstrumentIdentifier : "UCC-1 filing, parcel"
   User ||--o{ InstrumentIdentifier : "verifies"
 ```
 
-One table, one row per identifier, exactly one target per row. What makes it
+A link's `masterRef` is how the deal room reaches its own system of record.
+These identifiers are the other direction: how third-party data that has never
+heard of our `masterRef` — a Bloomberg request, a Markit mark, an agent notice —
+is matched to the right link. One table, one row per identifier, exactly one
+target per row. What makes it
 trustworthy is enforced in the migration rather than the Prisma schema, which
 cannot express either rule:
 
-- **`CHECK (num_nonnulls(companyId, legalEntityId, facilityId, positionId, collateralId) = 1)`**,
+- **`CHECK (num_nonnulls(companyId, instrumentId, positionId) = 1)`**,
   so an identifier always names exactly one thing.
 - **Partial unique indexes over live rows (`WHERE validTo IS NULL`)**: a live
   `(scheme, namespace, value)` names one thing only, and a target holds one live
@@ -210,7 +257,7 @@ cannot express either rule:
   LoanX ID without deleting the history marks were taken against.
 
 `namespace` carries the issuer for schemes that are only unique inside one
-system (the agent's facility reference, a WSO instance, a filing office). It is
+system (the agent's facility reference, a WSO instance). It is
 an empty string rather than NULL so it takes part in the uniqueness rule.
 
 The running app already implements this for borrowers and facilities
@@ -227,70 +274,75 @@ for the rest; the schema file carries inline commentary on every one.)
 |---|---|---|
 | `WallCrossEvent` | Immutable record of crossing/de-crossing the information barrier | `crossed`, `subject`, `approver`, `reason`; `DealTeamMember.isWallCrossed` is the denormalized current state |
 | `AuditEvent` | Append-only audit with before/after payloads | `action`, `entityType`, `entityId`, `before`/`after` `Json` |
-| `LegalEntity` | Borrowers, guarantors, pledgors — the credit group | self-referencing `EntityTree`; distinct from the operating `Company` |
+| `Company` · `Sponsor` · `Advisor` · `Lender` · `Instrument` · `Collateral` | Links to the entity master, security master and collateral system | `id`, `orgId` (or `dealId` for collateral) and `masterRef` only; unique per org on `masterRef` |
 | `StageTransition` | Every pipeline stage change | `fromStage`, `toStage`, `daysInPrior` denormalized for cheap velocity math |
 | `MemoVersion` / `MemoSection` | Real memo version history | `@@unique([memoId, versionNo])`; `CreditMemo.currentVersionId` points at the live one |
 | `DocumentVersion` | Real file versions | `checksum`, `storageKey`, `extractedText` (search + AI grounding) |
 | `DocumentAccessGrant` | Deny-by-default access to a doc *or* folder, for a user *or* team | `canView`/`canDownload`, `expiresAt` |
 | `DocumentEvent` | View/download/print audit trail | the record LPs and regulators ask for |
-| `FacilityPricing` | Effective-dated pricing | repricings and ratchets are history; live terms = latest `effectiveFrom` |
-| `FacilityParticipation` | Syndicate holdings | `agentRole`, per-lender `commitment`/`funded` |
-| `AmendmentConsent` | Consent tracking with threshold math | `weightPct` per consenting lender vs `Amendment.requiredConsentPct` |
+| `Facility` | A deal's tranche | `label` within the deal; `instrumentId` set once booked |
+| `TermSheet` | Versioned structure and terms proposed for a deal | `terms` `Json` snapshot; `ICAgendaItem.termSheetId` records which version a committee approved |
+| `AmendmentConsent` | A lender's consent vote | threshold and holdings at the record date come from the security master's lender register |
 | `FieldDefinition` | Governed field vocabulary | `aggregation` (FLOW/STOCK/DERIVED), `bloombergMnemonic`, `deriveFormula` |
 | `FundamentalFact` | Every financial value, by field & period | `@@unique([companyId, periodEnd, fieldCode, source])` — sources layer, overrides win |
 | `EbitdaAdjustment` | GAAP→Adjusted bridge | `isCapped`/`isUncapped`/`isAggressive` let the permitted amount be *computed*, so the cap binds |
 | `CovenantThresholdStep` | Step-down schedule as rows | queryable and chartable, unlike a JSON blob |
 | `CovenantTest` | One test, both numbers | `recomputedValue` vs `reportedValue` + `reconDelta`; `formulaSnapshot` makes the math auditable |
-| `Position` | A fund's holding in a facility | the unit exposure, marks and returns roll up from |
+| `Position` | A fund's holding in an instrument | the unit exposure, marks and returns roll up from |
 | `PositionTransaction` | Dated, signed cash flows | the XIRR input; realized/unrealized split |
 | `KpiSnapshot` | Generic metric time-series | `@@unique([orgId, asOf, scopeType, scopeId, metric])` — new tiles need no new tables |
 | `Alert` | Dashboard alert inbox | `dedupeKey` so a recurring condition updates one alert instead of spamming |
 | `SavedView` | Per-user dashboard filters/layout | `route` + `filters` `Json` |
-| `InstrumentIdentifier` | CUSIP, ISIN, LoanX, FIGI, LEI, Bloomberg ID, agent and admin refs, UCC filings | effective-dated (`validFrom`/`validTo`); exactly one target; live-value uniqueness via partial indexes; check digits validated on write |
-| `MarketComp` | Persisted DLEN prints | `idScheme`/`idValue` keep the comp's own identifier, so prints deduplicate and match to our facilities |
+| `InstrumentIdentifier` | CUSIP, ISIN, LoanX, FIGI, LEI, Bloomberg ID, agent and admin refs | effective-dated (`validFrom`/`validTo`); exactly one target; live-value uniqueness via partial indexes; check digits validated on write |
 
 ---
 
 ## 5. Dashboard completeness matrix
 
 The test of "captures all the information needed": every widget a deal room dashboard
-would show, mapped to the entities that serve it.
+would show, the entities that serve it, and where the data comes from. **Here** means this
+model is the source of record; anything else is read through a link at query time.
 
-| Dashboard widget | Backed by |
-|---|---|
-| Pipeline funnel by stage | `Deal.stage` |
-| Pipeline **velocity / cycle time** | `StageTransition.daysInPrior` |
-| Conversion & win/loss rates | `StageTransition` + `Deal.status` |
-| Deal flow by sponsor / channel | `Deal.channel`, `Sponsor` |
-| Probability-weighted pipeline | `Deal.probability`, `Deal.targetHold` |
-| Committed vs funded capital | `Facility.commitment/fundedAmount`, `Position` |
-| Exposure by sector / sponsor / fund | `Position` → `Facility` → `Deal` → `Company.industry`, `Fund` |
-| Portfolio marks & NAV | `Valuation` (position-level) |
-| IRR / MOIC tiles | `PositionTransaction`, `ReturnSnapshot` |
-| Cash-flow forecast | `FacilityCashflow` (`isProjected`) |
-| Covenant status heatmap | `CovenantTest.status` |
-| Covenant headroom trend vs step-downs | `CovenantTest.headroomPct`, `CovenantThresholdStep` |
-| Reconciliation exceptions | `CovenantTest.reconDelta` + `RECON_FLAG` |
-| Adjusted-EBITDA quality / cap breach | `EbitdaAdjustment.isCapped/isUncapped/isAggressive` |
-| Reporting calendar & late filings | `ReportingObligation`, `ReportingDelivery` |
-| Watchlist | `WatchlistEvent` |
-| **Rating migration matrix** | `RatingHistory` |
-| Amendment pipeline & consent progress | `Amendment`, `AmendmentConsent` |
-| Syndicate / hold-level exposure | `FacilityParticipation`, `Lender` |
-| Collateral coverage | `Collateral`, `FacilityObligor` |
-| Data room activity & stale docs | `DocumentEvent`, `DocumentVersion` |
-| DDQ completion | `DiligenceItem.status` |
-| Open Q&A with sponsor | `QAThread`, `QAMessage` |
-| IC calendar, outcomes & vote tally | `ICMeeting`, `ICAgendaItem`, `ICVote` |
-| Memo status / who edited what | `CreditMemo`, `MemoVersion` |
-| My tasks & overdue items | `Task` |
-| Alerts inbox | `Alert` |
-| Recent activity feed | `ActivityEvent` |
-| Compliance: wall-crossings & access review | `WallCrossEvent`, `DocumentAccessGrant`, `AuditEvent` |
-| Pricing context vs market | `MarketComp`, `ReferenceRate` |
-| Multi-currency roll-up | `Currency` + `FxRate` |
-| Saved filters / personalized layout | `SavedView` |
-| Fast KPI tiles & sparklines | `KpiSnapshot` |
+| Dashboard widget | Backed by | Source |
+|---|---|---|
+| Pipeline funnel by stage | `Deal.stage` | Here |
+| Pipeline **velocity / cycle time** | `StageTransition.daysInPrior` | Here |
+| Conversion & win/loss rates | `StageTransition` + `Deal.status` | Here |
+| Deal flow by sponsor / channel | `Deal.channel`, `Deal.sponsorId` | Here; sponsor names from the entity master |
+| Probability-weighted pipeline | `Deal.probability`, `Deal.targetHold` | Here |
+| Committed vs funded capital | `Position`; each instrument's commitment and drawn balance | Here + security master |
+| Exposure by sector / sponsor / fund | `Position` → `Instrument`; sector and owner via the `Company` link | Here + entity master |
+| Portfolio marks & NAV | `Valuation` (position-level) | Here |
+| IRR / MOIC tiles | `PositionTransaction`, `ReturnSnapshot` | Here |
+| Cash-flow forecast | the instrument's cash-flow schedule | Security master |
+| Covenant status heatmap | `CovenantTest.status` | Here |
+| Covenant headroom trend vs step-downs | `CovenantTest.headroomPct`, `CovenantThresholdStep` | Here |
+| Reconciliation exceptions | `CovenantTest.reconDelta` + `RECON_FLAG` | Here |
+| Adjusted-EBITDA quality / cap breach | `EbitdaAdjustment.isCapped/isUncapped/isAggressive` | Here |
+| Reporting calendar & late filings | `ReportingObligation`, `ReportingDelivery` | Here |
+| Watchlist | `WatchlistEvent` | Here |
+| **Rating migration matrix** | `RatingHistory` | Here |
+| **Approved vs booked terms** | the `TermSheet` a committee approved vs the instrument's booked terms | Here + security master |
+| Amendment pipeline & consent progress | `Amendment`, `AmendmentConsent`; thresholds and holdings from the lender register | Here + security master |
+| Syndicate / hold-level exposure | the instrument's lender register | Security master |
+| Collateral coverage | `Collateral` links; values and what they secure | Collateral system |
+| Data room activity & stale docs | `DocumentEvent`, `DocumentVersion` | Here |
+| DDQ completion | `DiligenceItem.status` | Here |
+| Open Q&A with sponsor | `QAThread`, `QAMessage` | Here |
+| IC calendar, outcomes & vote tally | `ICMeeting`, `ICAgendaItem`, `ICVote` | Here |
+| Memo status / who edited what | `CreditMemo`, `MemoVersion` | Here |
+| My tasks & overdue items | `Task` | Here |
+| Alerts inbox | `Alert` | Here |
+| Recent activity feed | `ActivityEvent` | Here |
+| Compliance: wall-crossings & access review | `WallCrossEvent`, `DocumentAccessGrant`, `AuditEvent` | Here |
+| Pricing context vs market | comps and reference rates | Market-data vendor |
+| Multi-currency roll-up | `Currency` on every amount; FX rates | Here + market-data vendor |
+| Saved filters / personalized layout | `SavedView` | Here |
+| Fast KPI tiles & sparklines | `KpiSnapshot` | Here |
+
+"Approved vs booked terms" is new with the overlay: once booked terms live in the security
+master, comparing them with the term sheet the committee approved is a cross-system check
+only the deal room can make.
 
 ---
 
@@ -301,6 +353,9 @@ monitoring well. This model closes the structural gaps.
 
 | Current | Canonical | Why |
 |---|---|---|
+| `Borrower` holds name, sector, description, HQ, CEO, founding year | `Company` link to the entity master | the deal room should not be a second, stale copy of borrower data |
+| `Facility` holds spread, floor, OID, PIK, fees, commitment, maturity | `Instrument` link to the security master; `Facility` is the deal's tranche | the instrument is the source of record; a local copy drifts the first time the agent reprices |
+| *(absent)* | `TermSheet` versions + `ICAgendaItem.termSheetId` | once terms live elsewhere, the committee's decision needs a record of what it approved |
 | `DealTeamMember.name`, `uploadedBy`, `assignee`, `ActivityLog.actor` as **strings** | `User` + `OrgMembership` + FK everywhere | attribution, filtering and permissions are impossible on free text |
 | `DealTeamMember.wallCrossed` boolean | `WallCrossEvent` stream | compliance needs *when*, *by whom*, *why* |
 | `Document.version` **integer** | `DocumentVersion` rows + `DocumentEvent` + `DocumentAccessGrant` | no history, no audit, no per-user access today |
@@ -308,15 +363,14 @@ monitoring well. This model closes the structural gaps.
 | `Borrower.riskRating` / `watchlist` **scalars** | `RatingHistory`, `WatchlistEvent` | rating migration needs history |
 | `Valuation` hangs off **Borrower** | `Valuation` on **`Position`** | marks belong to a holding, not a company |
 | *(absent)* | `Fund`, `Allocation`, `Position`, `PositionTransaction`, `ReturnSnapshot` | no portfolio/fund layer exists today |
-| *(absent)* | `Lender`, `FacilityParticipation`, `Collateral`, `FacilityObligor` | no syndicate, collateral or obligor structure |
+| *(absent)* | `Lender` and `Collateral` links | consent votes and collateral diligence need something to point at; the lender register, obligors and collateral details stay in their systems |
 | `LifecycleEvent` (generic) | `Amendment` + `AmendmentConsent` | consent thresholds and voting need structure |
 | Money as **`Float`** | `Decimal(20,4)` | precision |
 | Enums as **`String`** | native Postgres enums | integrity |
 | `thresholdSchedule` **JSON blob** | `CovenantThresholdStep` rows | queryable, chartable |
 | `FinancialStatement` **fixed columns** | `FinancialPeriod` + `FundamentalFact` + `FieldDefinition` | new metrics without migrations; explicit FLOW/STOCK aggregation |
-| Facility pricing **scalars** | `FacilityPricing` effective-dated | repricings are history |
-| *(absent)* | `Alert`, `KpiSnapshot`, `SavedView`, `FxRate`, `ReferenceRate`, `MarketComp`, `Industry`, `LegalEntity`, `Contact`, `Advisor`, `QAThread`, `Comment`, `Milestone`, `ICMeeting` | dashboard, reference-data and collaboration surface |
-| Instruments known only by **cuid + name**; Bloomberg asked by **name or deal ID** | `InstrumentIdentifier` on company, legal entity, facility, position, collateral | names are not identifiers: they are not unique and they change, and no real Bloomberg request can be made from one |
+| *(absent)* | `Alert`, `KpiSnapshot`, `SavedView`, `Advisor` link, `QAThread`, `Comment`, `Milestone`, `ICMeeting` | dashboard and collaboration surface |
+| Instruments known only by **cuid + name**; Bloomberg asked by **name or deal ID** | `InstrumentIdentifier` on company, instrument and position | names are not identifiers: they are not unique and they change, and no real Bloomberg request can be made from one |
 
 Since this table was written the running app has adopted identity (step 2 below: `User`,
 `Organization`, `OrgMembership`, actor FKs) and instrument identifiers for borrowers and
@@ -337,17 +391,23 @@ This is a design artifact — adopting it is a real migration, not a drop-in. A 
    Mechanical, and unblocks everything else.
 2. **Identity.** Introduce `User`/`Organization`/`OrgMembership`; backfill the name strings
    to FKs; replace the simulated role cookie with real membership + `DealTeamMember`.
-3. **History tables.** Add `StageTransition`, `RatingHistory`, `DocumentVersion`,
-   `FacilityPricing`; backfill one row per current scalar value, then start appending.
-4. **Fund/position layer.** Add `Fund`/`Position`/`PositionTransaction`; re-point `Valuation`
+3. **Systems of record.** Put entity-master and security-master clients behind
+   interfaces — mocked first, exactly as Bloomberg is — seeded from today's
+   `Borrower` and `Facility` columns. Then reduce those tables to links and read
+   names and terms through the clients. Pages change from reading a column to
+   calling a client; the covenant engine does not change.
+4. **History tables.** Add `StageTransition`, `RatingHistory`, `DocumentVersion`;
+   backfill one row per current scalar value, then start appending.
+5. **Fund/position layer.** Add `Fund`/`Position`/`PositionTransaction`; re-point `Valuation`
    from `Borrower` to `Position`. This is the largest behavioral change — portfolio and
    returns views move from deal-level to position-level roll-ups.
-5. **Remaining surface** (syndication, collateral, amendments, alerts, KPI snapshots) as
-   the corresponding dashboard widgets are built. `InstrumentIdentifier` gains its
-   legal-entity, position and collateral targets as those models arrive; the table,
-   its constraints and the validator already exist for borrowers and facilities.
+6. **Remaining surface** (term sheets, amendments, collateral links, alerts, KPI
+   snapshots) as the corresponding dashboard widgets are built. `InstrumentIdentifier`
+   gains its position target when positions arrive; the table, its constraints and
+   the validator already exist for borrowers and facilities.
 
-Steps 1–3 are additive and low-risk. Step 4 changes how exposure and returns are computed,
+Steps 1, 2 and 4 are additive and low-risk. Step 3 removes columns, so it lands only once
+every read goes through a client. Step 5 changes how exposure and returns are computed,
 so it wants its own migration + reconciliation against current numbers.
 
 ---
@@ -369,7 +429,7 @@ node docs/data-model/generate-xsd.mjs          # or: npm run docs:xsd
 |---|---|
 | Target namespace | `urn:lumen:private-credit-deal-room:1.0` |
 | Document element | `DealRoomDataset` — one optional collection per entity type |
-| Contents | 69 `xs:complexType` entities · 41 `xs:simpleType` enumerations · 70 `xs:key` · 128 `xs:keyref` |
+| Contents | 61 `xs:complexType` entities · 36 `xs:simpleType` enumerations · 62 `xs:key` · 117 `xs:keyref` |
 
 ### How the Prisma model maps onto it
 
@@ -379,7 +439,7 @@ node docs/data-model/generate-xsd.mjs          # or: npm run docs:xsd
 | `enum Bar` | `<xs:simpleType name="Bar">` | `xs:restriction` on `xs:string` with one `xs:enumeration` per value. |
 | Relation field (`deal Deal @relation(...)`) | *omitted* | A navigation, not data. The scalar FK it maps to is what appears. |
 | Scalar FK (`dealId String`) | `<xs:element name="dealId" type="pc:Cuid">` + `xs:keyref` | So validation checks referential integrity, not just shape. |
-| `Decimal @db.Decimal(20,4)` | `pc:Money` | Named simple types carry `totalDigits`/`fractionDigits`: `Money` (20,4), `Ratio` (18,6), `Percent` (9,4), `MetricValue` (24,6), `RatePercent` (9,6), `FxFactor` (18,8). |
+| `Decimal @db.Decimal(20,4)` | `pc:Money` | Named simple types carry `totalDigits`/`fractionDigits`: `Money` (20,4), `Ratio` (18,6), `Percent` (9,4), `MetricValue` (24,6). The generator names any other precision it meets (it knows `RatePercent` and `FxFactor` for rate and FX tables, which now live with the vendor). |
 | `Json` | `pc:Json` | Mixed content — carry the JSON as text, or as lax-validated child elements. |
 | `String[]` | repeating element, `minOccurs="0" maxOccurs="unbounded"` | |
 | `?` | `minOccurs="0"` | |
@@ -444,7 +504,7 @@ What it gives you that the diagrams in §3 cannot:
 | **Columns** | Type, nullability, defaults, PK/unique flags and the `///` note for each column. Enum types are links — click `DealStage` and you get its values and every column that uses it. |
 | **Trail** | A breadcrumb of the path you took, so a four-hop dive is retraceable and each step is clickable. |
 | **Search** | Matches entity names *and* column names — typing `ebitda` finds the three entities that carry one. |
-| **Degree** | The number beside each entity in the sidebar is its edge count, so the hubs are obvious: `User` 32, `Deal` 24, `Organization` and `Company` 12 each. |
+| **Degree** | The number beside each entity in the sidebar is its edge count, so the hubs are obvious: `User` 33, `Deal` 26, `Organization` 14. |
 
 Deep links work: `explorer.html#CovenantTest` opens straight to that entity.
 The page remembers the last entity you looked at, follows your light/dark

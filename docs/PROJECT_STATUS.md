@@ -503,9 +503,19 @@ overcure, test runner, Anthropic SDK, upload action):
   the capital-structure table and used for Bloomberg lookups, but there is no
   form to add or retire one; today that is a database write. The validator and
   the constraints are in place for it.
-- **Identifiers beyond borrowers and facilities.** The canonical model attaches
-  them to legal entities (LEI), positions (fund-admin IDs) and collateral (UCC-1
-  filings); the running app has none of those models yet.
+- **Adopt the overlay boundary.** The canonical model (`docs/data-model/`) now
+  treats the deal room as an overlay: borrowers, sponsors, advisors, lenders,
+  instruments and collateral are links (`masterRef`) to their systems of
+  record, and loan terms are read from the security master rather than stored.
+  The running app still stores both locally — `Borrower` has name, sector,
+  description and HQ; `Facility` has spread, floor, OID, fees and maturity.
+  Adopting it means entity-master and security-master clients behind
+  interfaces, mocked first as Bloomberg is and seeded from today's columns,
+  then reducing those tables to links (adoption step 3 in the data-model
+  README). It also adds `TermSheet`, so committee approvals keep a record of
+  the terms they approved.
+- **Identifiers on positions.** The canonical model also attaches fund-admin
+  IDs to positions; the running app has no positions yet.
 - **Overlapping retired date ranges.** The database enforces uniqueness among
   *live* identifiers only. Stopping two *retired* ranges for the same value from
   overlapping needs an exclusion constraint (`btree_gist`), which not every
