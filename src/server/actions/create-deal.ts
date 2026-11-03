@@ -88,9 +88,6 @@ export async function createDeal(raw: NewDealInput): Promise<{ dealId: string }>
   const borrower = await db.borrower.create({
     data: {
       masterRef: profile.ref,
-      // Legacy columns, still NOT NULL until the next migration drops them.
-      name: profile.name,
-      sector: profile.sector,
       sponsorId: input.sponsorId,
       riskRating: null,
       riskTrend: "Stable",
@@ -151,8 +148,6 @@ export async function createDeal(raw: NewDealInput): Promise<{ dealId: string }>
       dealId: deal.id,
       borrowerId: borrower.id,
       name: `${input.facilityType} Facility`,
-      // Legacy term columns, still NOT NULL until the next migration drops them.
-      ...proposed,
     },
   });
   await db.termSheet.create({

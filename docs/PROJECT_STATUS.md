@@ -503,17 +503,20 @@ overcure, test runner, Anthropic SDK, upload action):
   the capital-structure table and used for Bloomberg lookups, but there is no
   form to add or retire one; today that is a database write. The validator and
   the constraints are in place for it.
-- **Adopt the overlay boundary.** The canonical model (`docs/data-model/`) now
-  treats the deal room as an overlay: borrowers, sponsors, advisors, lenders,
-  instruments and collateral are links (`masterRef`) to their systems of
-  record, and loan terms are read from the security master rather than stored.
-  The running app still stores both locally — `Borrower` has name, sector,
-  description and HQ; `Facility` has spread, floor, OID, fees and maturity.
-  Adopting it means entity-master and security-master clients behind
-  interfaces, mocked first as Bloomberg is and seeded from today's columns,
-  then reducing those tables to links (adoption step 3 in the data-model
-  README). It also adds `TermSheet`, so committee approvals keep a record of
-  the terms they approved.
+- **Finish the overlay.** Borrowers and facilities are now links: borrower
+  details come from the entity master and booked terms from the security
+  master, through `src/lib/masters`, and pre-booking terms from versioned
+  term sheets. Still to do:
+  - **Sponsors** are still stored locally (name, type, AUM, HQ). The canonical
+    model makes them entity-master links too; the same pattern applies.
+  - **Booking on close.** No action in the app closes a deal, so only the seed
+    books facilities into the security master. A close action should book
+    each tranche from the approved term sheet and set `Facility.masterRef`.
+  - **A separate `Instrument` link**, as in the canonical model, once positions
+    arrive: one instrument can then be reached from an add-on deal as well.
+  - **Real clients.** The mocks keep their data in stand-in tables; replacing
+    them with real entity- and security-master clients changes only
+    `src/lib/masters/index.ts`.
 - **Identifiers on positions.** The canonical model also attaches fund-admin
   IDs to positions; the running app has no positions yet.
 - **Overlapping retired date ranges.** The database enforces uniqueness among

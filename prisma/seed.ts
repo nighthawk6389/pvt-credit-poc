@@ -268,9 +268,6 @@ async function main() {
     const borrower = await db.borrower.create({
       data: {
         masterRef: profile.ref,
-        // Legacy columns, still NOT NULL until the next migration drops them.
-        name: profile.name,
-        sector: profile.sector,
         sponsorId: sponsors[row.sponsor],
         riskRating: row.rating,
         riskTrend: row.trend,
@@ -332,42 +329,31 @@ async function main() {
       },
     });
 
-    const facility = await db.facility.create({
-      data: {
-        dealId: deal.id,
-        borrowerId: borrower.id,
-        name: `${row.facType} Facility`,
-        type: row.facType === "Unitranche" ? "Unitranche" : "FirstLienTL",
-        seniority: "First Lien",
-        commitment: row.size,
-        funded: row.stage === "Closed" ? row.size * (0.85 + rng() * 0.15) : 0,
-        spreadBps: row.spread,
-        floorBps: 100,
-        oidPct: +(0.5 + rng() * 1.5).toFixed(2),
-        upfrontFeeBps: 200 + Math.floor(rng() * 100),
-        maturity: D(2030, 1 + Math.floor(rng() * 11)),
-      },
-    });
-
     // The terms the deal proposed go on its first term sheet; a closed deal's
-    // tranche is booked into the security master and linked.
+    // tranche is booked into the security master with them and linked. The
+    // tranche row itself holds only a label. (Random draws keep their original
+    // order, so seeded figures do not move.)
+    const funded = closed ? row.size * (0.85 + rng() * 0.15) : 0;
     const terms: FacilityTerms = {
-      type: facility.type,
-      seniority: facility.seniority,
-      commitment: facility.commitment,
-      spreadBps: facility.spreadBps,
-      floorBps: facility.floorBps,
-      oidPct: facility.oidPct,
-      pikBps: facility.pikBps,
-      upfrontFeeBps: facility.upfrontFeeBps,
-      maturity: facility.maturity,
+      type: row.facType === "Unitranche" ? "Unitranche" : "FirstLienTL",
+      seniority: "First Lien",
+      commitment: row.size,
+      spreadBps: row.spread,
+      floorBps: 100,
+      oidPct: +(0.5 + rng() * 1.5).toFixed(2),
+      pikBps: 0,
+      upfrontFeeBps: 200 + Math.floor(rng() * 100),
+      maturity: D(2030, 1 + Math.floor(rng() * 11)),
     };
+    const facility = await db.facility.create({
+      data: { dealId: deal.id, borrowerId: borrower.id, name: `${row.facType} Facility` },
+    });
     await db.termSheet.create({
       data: { dealId: deal.id, versionNo: 1, terms: { tranches: [toTranche(facility.id, terms)] } },
     });
     if (closed) {
       const instrument = await securityMaster.bookInstrument(
-        { name: facility.name, currency: "USD", funded: facility.funded, ...terms },
+        { name: facility.name, currency: "USD", funded, ...terms },
         { ref: `SM-LN-${pad(n, 5)}` },
       );
       await db.facility.update({ where: { id: facility.id }, data: { masterRef: instrument.ref } });
@@ -538,9 +524,6 @@ async function seedFlagship(
   const borrower = await db.borrower.create({
     data: {
       masterRef: profile.ref,
-      // Legacy columns, still NOT NULL until the next migration drops them.
-      name: profile.name,
-      sector: profile.sector,
       sponsorId: sponsors["Brightwater Capital"],
       riskRating: "3",
       riskTrend: "Stable",
@@ -630,13 +613,15 @@ async function seedFlagship(
     },
   });
 
-  // Facilities (capital structure).
+  // Facilities (capital structure): the tranches hold labels; their proposed
+  // terms go on the term sheet below.
+  const flagshipTranches: { name: string; terms: FacilityTerms }[] = [
+    { name: "First Lien Unitranche", terms: { type: "Unitranche", seniority: "First Lien", commitment: 160, spreadBps: 575, floorBps: 100, oidPct: 1.0, pikBps: 0, upfrontFeeBps: 250, maturity: D(2031, 7) } },
+    { name: "Delayed-Draw Term Loan (Acq.)", terms: { type: "DelayedDraw", seniority: "First Lien", commitment: 25, spreadBps: 575, floorBps: 100, oidPct: 1.0, pikBps: 0, upfrontFeeBps: 250, maturity: D(2031, 7) } },
+    { name: "Revolving Credit Facility", terms: { type: "Revolver", seniority: "First Lien", commitment: 15, spreadBps: 550, floorBps: 100, oidPct: 0, pikBps: 0, upfrontFeeBps: 50, maturity: D(2031, 7) } },
+  ];
   await db.facility.createMany({
-    data: [
-      { dealId: deal.id, borrowerId: borrower.id, name: "First Lien Unitranche", type: "Unitranche", seniority: "First Lien", commitment: 160, funded: 0, spreadBps: 575, floorBps: 100, oidPct: 1.0, pikBps: 0, upfrontFeeBps: 250, maturity: D(2031, 7), order: 0 },
-      { dealId: deal.id, borrowerId: borrower.id, name: "Delayed-Draw Term Loan (Acq.)", type: "DelayedDraw", seniority: "First Lien", commitment: 25, funded: 0, spreadBps: 575, floorBps: 100, oidPct: 1.0, pikBps: 0, upfrontFeeBps: 250, maturity: D(2031, 7), order: 1 },
-      { dealId: deal.id, borrowerId: borrower.id, name: "Revolving Credit Facility", type: "Revolver", seniority: "First Lien", commitment: 15, funded: 0, spreadBps: 550, floorBps: 100, oidPct: 0, pikBps: 0, upfrontFeeBps: 50, maturity: D(2031, 7), order: 2 },
-    ],
+    data: flagshipTranches.map((t, order) => ({ dealId: deal.id, borrowerId: borrower.id, name: t.name, order })),
   });
   // Still at IC, so internal refs only: no agent reference, CUSIP or LoanX yet,
   // and the terms live on the term sheet the committee is voting on, not in
@@ -650,21 +635,7 @@ async function seedFlagship(
       dealId: deal.id,
       versionNo: 1,
       authorId: users["Avery Patel"],
-      terms: {
-        tranches: flagshipFacilities.map((f) =>
-          toTranche(f.id, {
-            type: f.type,
-            seniority: f.seniority,
-            commitment: f.commitment,
-            spreadBps: f.spreadBps,
-            floorBps: f.floorBps,
-            oidPct: f.oidPct,
-            pikBps: f.pikBps,
-            upfrontFeeBps: f.upfrontFeeBps,
-            maturity: f.maturity,
-          }),
-        ),
-      },
+      terms: { tranches: flagshipFacilities.map((f) => toTranche(f.id, flagshipTranches[f.order].terms)) },
     },
   });
 

@@ -384,9 +384,11 @@ monitoring well. This model closes the structural gaps.
 | Instruments known only by **cuid + name**; Bloomberg asked by **name or deal ID** | `InstrumentIdentifier` on company, instrument and position | names are not identifiers: they are not unique and they change, and no real Bloomberg request can be made from one |
 
 Since this table was written the running app has adopted identity (step 2 below: `User`,
-`Organization`, `OrgMembership`, actor FKs) and instrument identifiers for borrowers and
-facilities, so the first row and the identifier row now describe the canonical model's
-wider coverage rather than a gap in the app.
+`Organization`, `OrgMembership`, actor FKs), instrument identifiers for borrowers and
+facilities, and the overlay for borrowers and facilities (step 3: `Borrower` and `Facility`
+are links, read through entity- and security-master clients, with `TermSheet` for
+pre-booking terms). Those rows now describe the canonical model's wider coverage rather
+than a gap in the app.
 
 Carried forward largely intact (the covenant engine work): `CovenantDefinition`,
 `CovenantTest` with recompute-vs-reported reconciliation, `FundamentalFact`,
@@ -402,7 +404,7 @@ This is a design artifact — adopting it is a real migration, not a drop-in. A 
    Mechanical, and unblocks everything else.
 2. **Identity.** Introduce `User`/`Organization`/`OrgMembership`; backfill the name strings
    to FKs; replace the simulated role cookie with real membership + `DealTeamMember`.
-3. **Systems of record.** Put entity-master and security-master clients behind
+3. **Systems of record.** *(Done for borrowers and facilities; sponsors remain.)* Put entity-master and security-master clients behind
    interfaces — mocked first, exactly as Bloomberg is — seeded from today's
    `Borrower` and `Facility` columns. Then reduce those tables to links and read
    names and terms through the clients. Pages change from reading a column to

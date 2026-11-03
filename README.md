@@ -38,6 +38,27 @@ under `prisma/migrations/`. `npm run db:reset` drops, re-migrates and re-seeds.
 > returns `Decimal` objects whose arithmetic does not behave like `number`. The
 > canonical target model in `docs/data-model/` shows the intended end state.
 
+## Systems of record
+
+The deal room is an overlay: it owns its workflow and links to the systems of
+record for everything else (see `docs/data-model/README.md`).
+
+- **Borrowers** are links to an **entity master**. A `Borrower` row holds its
+  `masterRef` plus what the deal room owns — our risk rating, trend and
+  watchlist flag — and nothing else; the name, sector and description are read
+  from the master.
+- **Booked facilities** are links to a **security master** (`Facility.masterRef`),
+  which holds every term: spread, floor, OID, fees, commitment, drawn balance,
+  maturity. Before booking, a facility's proposed terms live on the deal's
+  versioned `TermSheet` — the record of what the committee approved.
+- `src/lib/masters` defines `EntityMasterClient` and `SecurityMasterClient`.
+  Mocks implement them today, keeping their records in stand-in tables
+  (`MockEntityRecord`, `MockInstrument`) that nothing else touches, so a real
+  WSO, Geneva or MDM client is a one-module swap — the same pattern as
+  Bloomberg.
+- `src/server/masters.ts` is the only place local rows are joined to the
+  masters. Queries call it; pages never read master data from the database.
+
 ## Identity & access
 
 Users, organizations and memberships are real rows. Every actor column is a
@@ -75,6 +96,8 @@ Writes are now durable and shared across all serverless instances.
 - `src/app/(app)/*` — dashboard, pipeline, deal workspace, portfolio, covenants, sponsors, compliance
 - `src/lib/bloomberg/*` — simulated Bloomberg adapter (DLEN / PORT / DRSK / CRPR / structuring), swappable for BLPAPI.
   Issuer-level calls take an `IssuerKey` resolved from stored identifiers, never a name
+- `src/lib/masters/*` — entity-master and security-master client interfaces, their mocks,
+  and the term-sheet format; `src/server/masters.ts` joins local rows to them
 - `src/lib/identifiers/*` — CUSIP / ISIN / LEI / FIGI check digits, normalisation and validation,
   and the resolution of a borrower to the identifier Bloomberg knows it by
 - `src/lib/copilot/*` — mocked, real-ready AI copilot (doc Q&A, memo drafting, covenant extraction)

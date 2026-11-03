@@ -104,20 +104,34 @@ export async function facilityTerms(facilities: FacilityLink[]) {
   };
 }
 
+type Profiled<B> = B & Omit<BorrowerProfile, "ref">;
+type Termed<F> = F & FacilityTermsView;
+
 /** A deal with its borrower's profile and its facilities' terms filled in. */
-export async function withMasters<D extends { borrower: BorrowerLink; facilities: FacilityLink[] }>(deal: D) {
+export async function withMasters<D extends { borrower: BorrowerLink; facilities: FacilityLink[] }>(
+  deal: D,
+): Promise<
+  Omit<D, "borrower" | "facilities"> & {
+    borrower: Profiled<D["borrower"]>;
+    facilities: Termed<D["facilities"][number]>[];
+  }
+> {
   const [profile, terms] = await Promise.all([borrowerProfiles([deal.borrower]), facilityTerms(deal.facilities)]);
   return { ...deal, borrower: profile(deal.borrower), facilities: deal.facilities.map(terms) };
 }
 
 /** A deal with its borrower's profile filled in. */
-export async function withBorrower<D extends { borrower: BorrowerLink }>(deal: D) {
+export async function withBorrower<D extends { borrower: BorrowerLink }>(
+  deal: D,
+): Promise<Omit<D, "borrower"> & { borrower: Profiled<D["borrower"]> }> {
   const profile = await borrowerProfiles([deal.borrower]);
   return { ...deal, borrower: profile(deal.borrower) };
 }
 
 /** A deal with its facilities' terms filled in. */
-export async function withFacilityTerms<D extends { facilities: FacilityLink[] }>(deal: D) {
+export async function withFacilityTerms<D extends { facilities: FacilityLink[] }>(
+  deal: D,
+): Promise<Omit<D, "facilities"> & { facilities: Termed<D["facilities"][number]>[] }> {
   const terms = await facilityTerms(deal.facilities);
   return { ...deal, facilities: deal.facilities.map(terms) };
 }

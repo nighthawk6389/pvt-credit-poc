@@ -27,20 +27,14 @@ model Sponsor {
   createdAt           DateTime   @default(now())
 }
 
-/// A borrower. Becoming a link to the entity master: `masterRef` is the
-/// borrower's ID there, and its name and description are read through
-/// src/lib/masters. The descriptive columns below are being retired.
+/// A link to a borrower in the entity master. Its name, sector, description
+/// and the rest are read through src/lib/masters, never stored here. What the
+/// deal room owns about a borrower stays: our risk rating and trend, the
+/// watchlist flag, and the records hung off it.
 model Borrower {
   id                String                 @id @default(cuid())
   /// The borrower's ID in the entity master.
-  masterRef         String?                @unique
-  name              String
-  sector            String
-  description       String?
-  hqCity            String?
-  website           String?
-  ceo               String?
-  founded           Int?
+  masterRef         String                 @unique
   sponsorId         String?
   sponsor           Sponsor?               @relation(fields: [sponsorId], references: [id])
   deals             Deal[]
@@ -94,29 +88,19 @@ model Deal {
 
 /// A tranche of a deal. Once booked, `masterRef` points at the instrument in
 /// the security master and its terms are read from there; before booking they
-/// come from the deal's latest TermSheet. The term columns below are being
-/// retired.
+/// come from the deal's latest TermSheet. Either way, no terms are stored here.
 model Facility {
-  id            String                 @id @default(cuid())
+  id          String                 @id @default(cuid())
   /// The booked instrument's ID in the security master; null until booked.
-  masterRef     String?
-  dealId        String
-  deal          Deal                   @relation(fields: [dealId], references: [id], onDelete: Cascade)
-  borrowerId    String?
-  borrower      Borrower?              @relation(fields: [borrowerId], references: [id])
-  name          String
-  type          String // Unitranche|Revolver|FirstLienTL|DelayedDraw|SecondLien
-  seniority     String // First Lien|Second Lien|Unsecured
-  commitment    Float // $MM
-  funded        Float                  @default(0)
-  spreadBps     Int
-  floorBps      Int                    @default(100)
-  oidPct        Float                  @default(0)
-  pikBps        Int                    @default(0)
-  upfrontFeeBps Int                    @default(0)
-  maturity      DateTime?
-  order         Int                    @default(0)
-  identifiers   InstrumentIdentifier[]
+  masterRef   String?
+  dealId      String
+  deal        Deal                   @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  borrowerId  String?
+  borrower    Borrower?              @relation(fields: [borrowerId], references: [id])
+  /// Our label for the tranche within the deal: "Unitranche", "DDTL", "RCF".
+  name        String
+  order       Int                    @default(0)
+  identifiers InstrumentIdentifier[]
 
   @@index([masterRef])
 }
