@@ -1,5 +1,10 @@
 import { db } from "@/lib/db";
 import { canSeeDeal, type Role } from "@/lib/auth/roles";
+import { withBorrower, withFacilityTerms, withMasters } from "@/server/masters";
+
+// Borrower details and facility terms are not stored here: every query that
+// returns them reads them through @/server/masters, from the entity master and
+// the security master (or a deal's term sheet before booking).
 
 /** Lightweight deal header used by the deal layout / sub-nav. */
 export async function getDealHeader(id: string, role: Role) {
@@ -14,11 +19,11 @@ export async function getDealHeader(id: string, role: Role) {
   });
   if (!deal) return { deal: null, blocked: false };
   if (!canSeeDeal(role, deal)) return { deal: null, blocked: true };
-  return { deal, blocked: false };
+  return { deal: await withMasters(deal), blocked: false };
 }
 
 export async function getDealOverview(id: string) {
-  return db.deal.findUnique({
+  const deal = await db.deal.findUnique({
     where: { id },
     include: {
       borrower: {
@@ -39,6 +44,7 @@ export async function getDealOverview(id: string) {
       _count: { select: { documents: true } },
     },
   });
+  return deal && withMasters(deal);
 }
 
 export async function getDataRoom(id: string) {
@@ -59,14 +65,15 @@ export async function getDataRoom(id: string) {
 }
 
 export async function getDocument(dealId: string, docId: string) {
-  return db.document.findFirst({
+  const doc = await db.document.findFirst({
     where: { id: docId, dealId },
     include: { deal: { include: { borrower: true } }, folder: true, uploadedBy: true },
   });
+  return doc && { ...doc, deal: await withBorrower(doc.deal) };
 }
 
 export async function getDiligence(id: string) {
-  return db.deal.findUnique({
+  const deal = await db.deal.findUnique({
     where: { id },
     include: {
       ddqItems: { orderBy: { order: "asc" }, include: { assignee: true } },
@@ -74,10 +81,11 @@ export async function getDiligence(id: string) {
       borrower: true,
     },
   });
+  return deal && withBorrower(deal);
 }
 
 export async function getMemo(id: string) {
-  return db.deal.findUnique({
+  const deal = await db.deal.findUnique({
     where: { id },
     include: {
       memo: true,
@@ -86,10 +94,11 @@ export async function getMemo(id: string) {
       documents: { select: { id: true, name: true, bodyText: true } },
     },
   });
+  return deal && withBorrower(deal);
 }
 
 export async function getStructuring(id: string) {
-  return db.deal.findUnique({
+  const deal = await db.deal.findUnique({
     where: { id },
     include: {
       facilities: { orderBy: { order: "asc" }, include: { identifiers: true } },
@@ -102,10 +111,11 @@ export async function getStructuring(id: string) {
       sponsor: true,
     },
   });
+  return deal && withMasters(deal);
 }
 
 export async function getCovenants(id: string) {
-  return db.deal.findUnique({
+  const deal = await db.deal.findUnique({
     where: { id },
     include: {
       covenants: {
@@ -114,6 +124,7 @@ export async function getCovenants(id: string) {
       borrower: true,
     },
   });
+  return deal && withBorrower(deal);
 }
 
 export async function getValuation(id: string) {
@@ -129,17 +140,18 @@ export async function getValuation(id: string) {
       facilities: { orderBy: { order: "asc" } },
     },
   });
-  return deal;
+  return deal && withMasters(deal);
 }
 
 export async function getCashflow(id: string) {
-  return db.deal.findUnique({
+  const deal = await db.deal.findUnique({
     where: { id },
     include: {
       cashflows: { orderBy: { order: "asc" } },
       facilities: { orderBy: { order: "asc" } },
     },
   });
+  return deal && withFacilityTerms(deal);
 }
 
 export async function getEvents(id: string) {

@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { canSeeDeal, type Role } from "@/lib/auth/roles";
+import { borrowerProfiles } from "@/server/masters";
 import {
   toParsedDefinition,
   evaluate,
@@ -290,7 +291,7 @@ export async function getCovenantSuite(dealId: string, role: Role) {
       id: deal.id,
       codeName: deal.codeName,
       borrowerId: deal.borrower.id,
-      borrowerName: deal.borrower.name,
+      borrowerName: (await borrowerProfiles([deal.borrower]))(deal.borrower).name,
     },
     items,
     latestAdjustments,
@@ -347,7 +348,11 @@ export async function getForecastInputs(dealId: string, role: Role) {
 
   return {
     blocked: false as const,
-    deal: { id: deal.id, codeName: deal.codeName, borrowerName: deal.borrower.name },
+    deal: {
+      id: deal.id,
+      codeName: deal.codeName,
+      borrowerName: (await borrowerProfiles([deal.borrower]))(deal.borrower).name,
+    },
     definitions,
     periods,
   };
@@ -396,9 +401,11 @@ export async function getCovenantBoard(role: Role) {
     },
   });
 
+  const visible = defs.filter((def) => canSeeDeal(role, def.deal));
+  const profile = await borrowerProfiles(visible.map((def) => def.deal.borrower));
   const byDeal = new Map<string, BoardRow>();
-  for (const def of defs) {
-    if (!canSeeDeal(role, def.deal)) continue;
+  for (const def of visible) {
+    const borrower = profile(def.deal.borrower);
     const key = def.dealId;
     let row = byDeal.get(key);
     if (!row) {
@@ -406,8 +413,8 @@ export async function getCovenantBoard(role: Role) {
         dealId: def.dealId,
         borrowerId: def.deal.borrower.id,
         deal: def.deal.codeName,
-        borrower: def.deal.borrower.name,
-        sector: def.deal.borrower.sector,
+        borrower: borrower.name,
+        sector: borrower.sector,
         covenants: [],
         worstStatus: "Pass",
         minHeadroom: null,

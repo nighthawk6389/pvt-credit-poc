@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { canSeeDeal, type Role } from "@/lib/auth/roles";
+import { borrowerProfiles } from "@/server/masters";
 import type { PaletteItem } from "@/components/shell/command-palette";
 import { fmtMM } from "@/lib/utils";
 
@@ -11,12 +12,14 @@ export async function getPaletteItems(role: Role): Promise<PaletteItem[]> {
       codeName: true,
       dealSize: true,
       isPrivileged: true,
-      borrower: { select: { id: true, name: true, sector: true } },
+      borrower: { select: { id: true, masterRef: true } },
     },
     orderBy: { createdAt: "desc" },
   });
 
-  const visible = deals.filter((d) => canSeeDeal(role, d));
+  const filtered = deals.filter((d) => canSeeDeal(role, d));
+  const profile = await borrowerProfiles(filtered.map((d) => d.borrower));
+  const visible = filtered.map((d) => ({ ...d, borrower: profile(d.borrower) }));
 
   const dealItems: PaletteItem[] = visible.map((d) => ({
     id: d.id,

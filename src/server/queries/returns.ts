@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { canSeeDeal, type Role } from "@/lib/auth/roles";
+import { borrowerProfiles, facilityTerms } from "@/server/masters";
 import { xirr, moic, quarterEndsBetween, type DatedCashflow } from "@/lib/finance";
 
 const SOFR_PCT = 4.35; // base-rate proxy, matches the Bloomberg adapter
@@ -34,8 +35,13 @@ export async function getReturns(role: Role) {
     },
   });
 
-  const positions = deals
-    .filter((d) => canSeeDeal(role, d))
+  const visible = deals.filter((d) => canSeeDeal(role, d));
+  const [profile, terms] = await Promise.all([
+    borrowerProfiles(visible.map((d) => d.borrower)),
+    facilityTerms(visible.flatMap((d) => d.facilities)),
+  ]);
+  const positions = visible
+    .map((d) => ({ ...d, borrower: profile(d.borrower), facilities: d.facilities.map(terms) }))
     .map((d): PositionReturn | null => {
       const fac = d.facilities[0];
       const funded = fac?.funded ?? 0;

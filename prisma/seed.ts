@@ -19,8 +19,15 @@ import {
   type IdSource,
   type IdTarget,
 } from "../src/lib/identifiers/index";
+import { MockEntityMaster, MockSecurityMaster } from "../src/lib/masters/mock";
+import { toTranche } from "../src/lib/masters/term-sheet";
+import type { FacilityTerms } from "../src/lib/masters/types";
 
 const db = new PrismaClient();
+// Borrower details live in the entity master and booked terms in the security
+// master; the deal room's rows hold links to them (docs/data-model/README.md).
+const entityMaster = new MockEntityMaster(db);
+const securityMaster = new MockSecurityMaster(db);
 
 // Deterministic RNG so reruns produce identical data.
 function makeRng(seedStr: string) {
@@ -126,6 +133,9 @@ async function main() {
   // Order matters for FK constraints.
   await db.activityLog.deleteMany();
   await db.instrumentIdentifier.deleteMany();
+  await db.termSheet.deleteMany();
+  await db.mockInstrument.deleteMany();
+  await db.mockEntityRecord.deleteMany();
   await db.reportingDelivery.deleteMany();
   await db.reportingObligation.deleteMany();
   await db.covenantDefTest.deleteMany();
@@ -243,14 +253,24 @@ async function main() {
     const rng = makeRng(row.name);
     const n = book.indexOf(row) + 1;
     const closed = row.stage === "Closed";
-    const borrower = await db.borrower.create({
-      data: {
+    const profile = await entityMaster.createBorrower(
+      {
         name: row.name,
         sector: row.sector,
         hqCity: row.city,
         description: row.desc,
         ceo: row.ceo,
         founded: 1995 + Math.floor(rng() * 22),
+        website: null,
+      },
+      { ref: `EM-${pad(n, 6)}` },
+    );
+    const borrower = await db.borrower.create({
+      data: {
+        masterRef: profile.ref,
+        // Legacy columns, still NOT NULL until the next migration drops them.
+        name: profile.name,
+        sector: profile.sector,
         sponsorId: sponsors[row.sponsor],
         riskRating: row.rating,
         riskTrend: row.trend,
@@ -328,6 +348,30 @@ async function main() {
         maturity: D(2030, 1 + Math.floor(rng() * 11)),
       },
     });
+
+    // The terms the deal proposed go on its first term sheet; a closed deal's
+    // tranche is booked into the security master and linked.
+    const terms: FacilityTerms = {
+      type: facility.type,
+      seniority: facility.seniority,
+      commitment: facility.commitment,
+      spreadBps: facility.spreadBps,
+      floorBps: facility.floorBps,
+      oidPct: facility.oidPct,
+      pikBps: facility.pikBps,
+      upfrontFeeBps: facility.upfrontFeeBps,
+      maturity: facility.maturity,
+    };
+    await db.termSheet.create({
+      data: { dealId: deal.id, versionNo: 1, terms: { tranches: [toTranche(facility.id, terms)] } },
+    });
+    if (closed) {
+      const instrument = await securityMaster.bookInstrument(
+        { name: facility.name, currency: "USD", funded: facility.funded, ...terms },
+        { ref: `SM-LN-${pad(n, 5)}` },
+      );
+      await db.facility.update({ where: { id: facility.id }, data: { masterRef: instrument.ref } });
+    }
 
     // Facility identifiers accrue over its life: an internal ref at sourcing,
     // the agent's reference at close, CUSIP/ISIN/LoanX if it is CUSIP'd.
@@ -478,8 +522,8 @@ async function seedFlagship(
 ) {
   const actorRef = makeActorRef(users);
   console.log("→ Flagship: Project Atlas (Meridian Health Partners)");
-  const borrower = await db.borrower.create({
-    data: {
+  const profile = await entityMaster.createBorrower(
+    {
       name: "Meridian Health Partners",
       sector: "Healthcare Services",
       hqCity: "Columbus, OH",
@@ -488,6 +532,15 @@ async function seedFlagship(
       founded: 2009,
       description:
         "Physician-led, multi-specialty outpatient care platform operating 64 clinics across the Midwest, with ~80% contracted/recurring revenue and a proven de novo + M&A growth model.",
+    },
+    { ref: `EM-${pad(15, 6)}` },
+  );
+  const borrower = await db.borrower.create({
+    data: {
+      masterRef: profile.ref,
+      // Legacy columns, still NOT NULL until the next migration drops them.
+      name: profile.name,
+      sector: profile.sector,
       sponsorId: sponsors["Brightwater Capital"],
       riskRating: "3",
       riskTrend: "Stable",
@@ -585,10 +638,35 @@ async function seedFlagship(
       { dealId: deal.id, borrowerId: borrower.id, name: "Revolving Credit Facility", type: "Revolver", seniority: "First Lien", commitment: 15, funded: 0, spreadBps: 550, floorBps: 100, oidPct: 0, pikBps: 0, upfrontFeeBps: 50, maturity: D(2031, 7), order: 2 },
     ],
   });
-  // Still at IC, so internal refs only: no agent reference, CUSIP or LoanX yet.
-  for (const f of await db.facility.findMany({ where: { dealId: deal.id }, orderBy: { order: "asc" } })) {
+  // Still at IC, so internal refs only: no agent reference, CUSIP or LoanX yet,
+  // and the terms live on the term sheet the committee is voting on, not in
+  // the security master.
+  const flagshipFacilities = await db.facility.findMany({ where: { dealId: deal.id }, orderBy: { order: "asc" } });
+  for (const f of flagshipFacilities) {
     await addInternalRef("facility", f.id, deal.createdAt);
   }
+  await db.termSheet.create({
+    data: {
+      dealId: deal.id,
+      versionNo: 1,
+      authorId: users["Avery Patel"],
+      terms: {
+        tranches: flagshipFacilities.map((f) =>
+          toTranche(f.id, {
+            type: f.type,
+            seniority: f.seniority,
+            commitment: f.commitment,
+            spreadBps: f.spreadBps,
+            floorBps: f.floorBps,
+            oidPct: f.oidPct,
+            pikBps: f.pikBps,
+            upfrontFeeBps: f.upfrontFeeBps,
+            maturity: f.maturity,
+          }),
+        ),
+      },
+    },
+  });
 
   // Team (wall-crossed deal team).
   await db.dealTeamMember.createMany({

@@ -27,8 +27,13 @@ model Sponsor {
   createdAt           DateTime   @default(now())
 }
 
+/// A borrower. Becoming a link to the entity master: `masterRef` is the
+/// borrower's ID there, and its name and description are read through
+/// src/lib/masters. The descriptive columns below are being retired.
 model Borrower {
   id                String                 @id @default(cuid())
+  /// The borrower's ID in the entity master.
+  masterRef         String?                @unique
   name              String
   sector            String
   description       String?
@@ -82,12 +87,19 @@ model Deal {
   notes         Note[]
   events        LifecycleEvent[]
   cashflows     CashFlowSchedule[]
+  termSheets    TermSheet[]
   activity      ActivityLog[]
   createdAt     DateTime             @default(now())
 }
 
+/// A tranche of a deal. Once booked, `masterRef` points at the instrument in
+/// the security master and its terms are read from there; before booking they
+/// come from the deal's latest TermSheet. The term columns below are being
+/// retired.
 model Facility {
   id            String                 @id @default(cuid())
+  /// The booked instrument's ID in the security master; null until booked.
+  masterRef     String?
   dealId        String
   deal          Deal                   @relation(fields: [dealId], references: [id], onDelete: Cascade)
   borrowerId    String?
@@ -105,6 +117,8 @@ model Facility {
   maturity      DateTime?
   order         Int                    @default(0)
   identifiers   InstrumentIdentifier[]
+
+  @@index([masterRef])
 }
 
 model DealTeamMember {
@@ -453,6 +467,7 @@ model User {
   eventsCreated     LifecycleEvent[]
   activity          ActivityLog[]
   idsVerified       InstrumentIdentifier[]
+  termSheets        TermSheet[]
 }
 
 model OrgMembership {
@@ -510,4 +525,61 @@ model InstrumentIdentifier {
   @@index([scheme, value])
   @@index([borrowerId])
   @@index([facilityId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Term sheets. The terms proposed for each tranche before it is booked —
+// the version a committee approves. After booking the security master is
+// authoritative and the sheet stays as the record of what was approved.
+// ─────────────────────────────────────────────────────────────────────────
+
+model TermSheet {
+  id        String   @id @default(cuid())
+  dealId    String
+  deal      Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  versionNo Int
+  /// { tranches: ProposedTranche[] } — validated by src/lib/masters/term-sheet.ts.
+  terms     Json
+  authorId  String?
+  author    User?    @relation(fields: [authorId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@unique([dealId, versionNo])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Stand-ins for external systems. The deal room links to an entity master
+// and a security master; until real ones are connected, these tables are
+// their storage. Only the mock clients in src/lib/masters/mock.ts read or
+// write them — the rest of the app sees the client interfaces, exactly as
+// it sees Bloomberg's — so replacing them is a change in one module.
+// ─────────────────────────────────────────────────────────────────────────
+
+model MockEntityRecord {
+  ref         String   @id
+  name        String
+  sector      String
+  description String?
+  hqCity      String?
+  website     String?
+  ceo         String?
+  founded     Int?
+  createdAt   DateTime @default(now())
+}
+
+model MockInstrument {
+  ref           String    @id
+  name          String
+  currency      String    @default("USD")
+  type          String
+  seniority     String
+  commitment    Float
+  funded        Float     @default(0)
+  spreadBps     Int
+  floorBps      Int       @default(100)
+  oidPct        Float     @default(0)
+  pikBps        Int       @default(0)
+  upfrontFeeBps Int       @default(0)
+  maturity      DateTime?
+  bookedAt      DateTime  @default(now())
 }

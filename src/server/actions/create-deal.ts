@@ -4,6 +4,9 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
+import { entityMaster } from "@/lib/masters";
+import type { FacilityTerms } from "@/lib/masters/types";
+import { toTranche } from "@/lib/masters/term-sheet";
 import { guard, logActivity } from "./helpers";
 
 const NewDealSchema = z.object({
@@ -72,10 +75,22 @@ export async function createDeal(raw: NewDealInput): Promise<{ dealId: string }>
   });
   if (existing) throw new Error(`Code name "${input.codeName}" is already in use`);
 
+  // The borrower is created in the entity master; the deal room keeps the link.
+  const profile = await entityMaster.createBorrower({
+    name: input.borrowerName,
+    sector: input.sector,
+    description: null,
+    hqCity: null,
+    website: null,
+    ceo: null,
+    founded: null,
+  });
   const borrower = await db.borrower.create({
     data: {
-      name: input.borrowerName,
-      sector: input.sector,
+      masterRef: profile.ref,
+      // Legacy columns, still NOT NULL until the next migration drops them.
+      name: profile.name,
+      sector: profile.sector,
       sponsorId: input.sponsorId,
       riskRating: null,
       riskTrend: "Stable",
@@ -118,19 +133,34 @@ export async function createDeal(raw: NewDealInput): Promise<{ dealId: string }>
     },
   });
 
-  await db.facility.create({
+  // A new deal's tranche is a proposal: its terms go on the deal's first term
+  // sheet, and the security master hears about it only when it is booked.
+  const proposed: FacilityTerms = {
+    type: input.facilityType.replace(/\s/g, ""),
+    seniority: input.facilityType === "Second Lien" ? "Second Lien" : "First Lien",
+    commitment: input.dealSize,
+    spreadBps: input.spreadBps,
+    floorBps: input.floorBps,
+    oidPct: input.oidPct,
+    pikBps: 0,
+    upfrontFeeBps: 200,
+    maturity: new Date(Date.UTC(2031, 5, 30)),
+  };
+  const facility = await db.facility.create({
     data: {
       dealId: deal.id,
       borrowerId: borrower.id,
       name: `${input.facilityType} Facility`,
-      type: input.facilityType.replace(/\s/g, ""),
-      seniority: input.facilityType === "Second Lien" ? "Second Lien" : "First Lien",
-      commitment: input.dealSize,
-      spreadBps: input.spreadBps,
-      floorBps: input.floorBps,
-      oidPct: input.oidPct,
-      upfrontFeeBps: 200,
-      maturity: new Date(Date.UTC(2031, 5, 30)),
+      // Legacy term columns, still NOT NULL until the next migration drops them.
+      ...proposed,
+    },
+  });
+  await db.termSheet.create({
+    data: {
+      dealId: deal.id,
+      versionNo: 1,
+      authorId: actorId,
+      terms: { tranches: [toTranche(facility.id, proposed)] },
     },
   });
 

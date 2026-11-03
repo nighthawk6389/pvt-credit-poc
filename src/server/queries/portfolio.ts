@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { canSeeDeal, type Role } from "@/lib/auth/roles";
+import { borrowerProfiles, facilityTerms } from "@/server/masters";
 
 export async function getPipeline(role: Role) {
   const deals = await db.deal.findMany({
@@ -12,8 +13,13 @@ export async function getPipeline(role: Role) {
     },
     orderBy: { dealSize: "desc" },
   });
-  return deals
-    .filter((d) => canSeeDeal(role, d))
+  const visible = deals.filter((d) => canSeeDeal(role, d));
+  const [profile, terms] = await Promise.all([
+    borrowerProfiles(visible.map((d) => d.borrower)),
+    facilityTerms(visible.flatMap((d) => d.facilities)),
+  ]);
+  return visible
+    .map((d) => ({ ...d, borrower: profile(d.borrower), facilities: d.facilities.map(terms) }))
     .map((d) => ({
       id: d.id,
       codeName: d.codeName,
@@ -49,8 +55,13 @@ export async function getPortfolioBook(role: Role) {
     },
     orderBy: { dealSize: "desc" },
   });
-  return deals
-    .filter((d) => canSeeDeal(role, d))
+  const visible = deals.filter((d) => canSeeDeal(role, d));
+  const [profile, terms] = await Promise.all([
+    borrowerProfiles(visible.map((d) => d.borrower)),
+    facilityTerms(visible.flatMap((d) => d.facilities)),
+  ]);
+  return visible
+    .map((d) => ({ ...d, borrower: profile(d.borrower), facilities: d.facilities.map(terms) }))
     .map((d) => {
       const breaches = d.covenants
         .flatMap((c) => c.tests)
@@ -96,7 +107,15 @@ export async function getBorrower(role: Role, borrowerId: string) {
   // Respect information barrier on the borrower's deals.
   const visibleDeals = borrower.deals.filter((d) => canSeeDeal(role, d));
   if (visibleDeals.length === 0 && borrower.deals.length > 0) return { blocked: true as const };
-  return { ...borrower, deals: visibleDeals, blocked: false as const };
+  const [profile, terms] = await Promise.all([
+    borrowerProfiles([borrower]),
+    facilityTerms(visibleDeals.flatMap((d) => d.facilities)),
+  ]);
+  return {
+    ...profile(borrower),
+    deals: visibleDeals.map((d) => ({ ...d, facilities: d.facilities.map(terms) })),
+    blocked: false as const,
+  };
 }
 
 export async function getCovenantCalendar(role: Role) {
@@ -108,14 +127,16 @@ export async function getCovenantCalendar(role: Role) {
     },
     orderBy: { periodEnd: "desc" },
   });
-  return tests
-    .filter((t) => canSeeDeal(role, t.covenant.deal))
+  const visible = tests.filter((t) => canSeeDeal(role, t.covenant.deal));
+  const profile = await borrowerProfiles(visible.map((t) => t.covenant.deal.borrower));
+  return visible
+    .map((t) => ({ ...t, borrower: profile(t.covenant.deal.borrower) }))
     .map((t) => ({
       id: t.id,
       dealId: t.covenant.dealId,
-      borrowerId: t.covenant.deal.borrower.id,
-      borrower: t.covenant.deal.borrower.name,
-      sector: t.covenant.deal.borrower.sector,
+      borrowerId: t.borrower.id,
+      borrower: t.borrower.name,
+      sector: t.borrower.sector,
       covenant: t.covenant.name,
       type: t.covenant.type,
       unit: t.covenant.unit,
@@ -142,6 +163,7 @@ export async function getSponsors(role: Role) {
     },
     orderBy: { aum: "desc" },
   });
+  const profile = await borrowerProfiles(sponsors.flatMap((s) => s.deals.map((d) => d.borrower)));
   return sponsors.map((s) => {
     const visible = s.deals.filter((d) => canSeeDeal(role, d));
     const closed = visible.filter((d) => d.stage === "Closed");
@@ -159,7 +181,7 @@ export async function getSponsors(role: Role) {
       deals: visible.map((d) => ({
         id: d.id,
         codeName: d.codeName,
-        borrower: d.borrower.name,
+        borrower: profile(d.borrower).name,
         stage: d.stage,
         size: d.dealSize,
       })),
@@ -172,6 +194,7 @@ export async function getComplianceData() {
     include: { team: { include: { user: true } }, borrower: true },
     orderBy: { createdAt: "desc" },
   });
+  const profile = await borrowerProfiles(deals.map((d) => d.borrower));
   const activity = await db.activityLog.findMany({
     where: { OR: [{ action: { contains: "wall" } }, { action: { contains: "cross" } }] },
     orderBy: { createdAt: "desc" },
@@ -182,7 +205,7 @@ export async function getComplianceData() {
     deals: deals.map((d) => ({
       id: d.id,
       codeName: d.codeName,
-      borrower: d.borrower.name,
+      borrower: profile(d.borrower).name,
       isPrivileged: d.isPrivileged,
       stage: d.stage,
       team: d.team.map((m) => ({

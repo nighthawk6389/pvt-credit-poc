@@ -20,6 +20,7 @@ import {
 import { guard, logActivity } from "./helpers";
 import { buildFactMaps } from "@/server/queries/covenants";
 import { getIssuerKey } from "@/server/queries/identifiers";
+import { borrowerProfiles } from "@/server/masters";
 import { SCHEME_SPECS } from "@/lib/identifiers";
 
 function bust(dealId: string) {
@@ -108,13 +109,16 @@ export async function recordFundamentals(dealId: string): Promise<FundamentalsRe
   const { actorId, role } = await guard("edit", "covenant");
   const deal = await db.deal.findUnique({
     where: { id: dealId },
-    select: { borrowerId: true, borrower: { select: { name: true } } },
+    select: { borrowerId: true },
   });
   if (!deal) throw new Error("Deal not found");
   const { borrowerId } = deal;
 
   const issuer = await getIssuerKey(borrowerId);
-  if (!issuer) return { coverage: "none", borrower: deal.borrower.name };
+  if (!issuer) {
+    const borrower = await db.borrower.findUniqueOrThrow({ where: { id: borrowerId }, select: { masterRef: true } });
+    return { coverage: "none", borrower: (await borrowerProfiles([borrower]))(borrower).name };
+  }
 
   const fins = await db.financialStatement.findMany({
     where: { borrowerId, isActual: true },

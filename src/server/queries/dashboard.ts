@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { canSeeDeal, type Role } from "@/lib/auth/roles";
+import { borrowerProfiles, facilityTerms } from "@/server/masters";
 import { bloomberg } from "@/lib/bloomberg/client";
 
 export async function getDashboardData(role: Role) {
@@ -14,7 +15,12 @@ export async function getDashboardData(role: Role) {
       facilities: true,
     },
   });
-  const visible = deals.filter((d) => canSeeDeal(role, d));
+  const allowed = deals.filter((d) => canSeeDeal(role, d));
+  const [profile, terms] = await Promise.all([
+    borrowerProfiles(allowed.map((d) => d.borrower)),
+    facilityTerms(allowed.flatMap((d) => d.facilities)),
+  ]);
+  const visible = allowed.map((d) => ({ ...d, borrower: profile(d.borrower), facilities: d.facilities.map(terms) }));
 
   const closed = visible.filter((d) => d.stage === "Closed");
   const active = visible.filter((d) => d.stage !== "Closed" && d.stage !== "Passed");
@@ -67,13 +73,14 @@ export async function getDashboardData(role: Role) {
     include: { covenant: { include: { deal: { include: { borrower: true } } } } },
     orderBy: { testDate: "asc" },
   });
+  const name = (b: { masterRef: string | null }) => profile(b).name;
   const breaches = tests.filter((t) => t.status === "Breach");
   const upcoming = tests
     .filter((t) => t.status === "Upcoming")
     .slice(0, 6)
     .map((t) => ({
       id: t.id,
-      borrower: t.covenant.deal.borrower.name,
+      borrower: name(t.covenant.deal.borrower),
       borrowerId: t.covenant.deal.borrower.id,
       covenant: t.covenant.name,
       testDate: t.testDate.toISOString(),
@@ -110,7 +117,7 @@ export async function getDashboardData(role: Role) {
     watchlist,
     breaches: breaches.map((t) => ({
       id: t.id,
-      borrower: t.covenant.deal.borrower.name,
+      borrower: name(t.covenant.deal.borrower),
       borrowerId: t.covenant.deal.borrower.id,
       dealId: t.covenant.dealId,
       covenant: t.covenant.name,
