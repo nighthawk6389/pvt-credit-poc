@@ -54,6 +54,9 @@ function makeActorRef(users: Record<string, string>) {
 const D = (y: number, m: number, d = 15, h = 0) =>
   new Date(Date.UTC(y, m - 1, d, h));
 
+/** Last day of a month, as a UTC calendar date: quarter ends are the 31st in March and December. */
+const monthEnd = (y: number, m: number) => new Date(Date.UTC(y, m, 0));
+
 const addMonths = (date: Date, months: number) => {
   const d = new Date(date);
   d.setUTCMonth(d.getUTCMonth() + months);
@@ -275,7 +278,7 @@ async function main() {
       await db.financialStatement.create({
         data: {
           borrowerId: borrower.id,
-          periodEnd: D(q.y, q.m, 30),
+          periodEnd: monthEnd(q.y, q.m),
           periodLabel: q.label,
           periodType: "Q",
           revenue,
@@ -408,7 +411,7 @@ async function main() {
         await db.covenantTest.create({
           data: {
             covenantId: lev.id,
-            periodEnd: D(q.y, q.m, 30),
+            periodEnd: monthEnd(q.y, q.m),
             testDate: D(q.y, q.m + 1 > 12 ? 1 : q.m + 1, 15),
             actual: actualLev,
             headroomPct: +(((threshLev - actualLev) / threshLev) * 100).toFixed(1),
@@ -420,7 +423,7 @@ async function main() {
         await db.covenantTest.create({
           data: {
             covenantId: cov.id,
-            periodEnd: D(q.y, q.m, 30),
+            periodEnd: monthEnd(q.y, q.m),
             testDate: D(q.y, q.m + 1 > 12 ? 1 : q.m + 1, 15),
             actual: fccr,
             headroomPct: +(((fccr - 1.5) / 1.5) * 100).toFixed(1),
@@ -509,7 +512,7 @@ async function seedFlagship(
     await db.financialStatement.create({
       data: {
         borrowerId: borrower.id,
-        periodEnd: D(q.y, q.m, 30),
+        periodEnd: monthEnd(q.y, q.m),
         periodLabel: q.label,
         periodType: "Q",
         revenue,
@@ -538,7 +541,7 @@ async function seedFlagship(
     await db.financialStatement.create({
       data: {
         borrowerId: borrower.id,
-        periodEnd: D(q.y, q.m, 30),
+        periodEnd: monthEnd(q.y, q.m),
         periodLabel: q.label,
         periodType: "Q",
         revenue,
@@ -720,7 +723,7 @@ async function seedFlagship(
     await db.covenantTest.create({
       data: {
         covenantId: covLev.id,
-        periodEnd: D(q.y, q.m, 30),
+        periodEnd: monthEnd(q.y, q.m),
         testDate: D(q.m + 1 > 12 ? q.y + 1 : q.y, q.m + 1 > 12 ? 1 : q.m + 1, 15),
         actual: isUpcoming ? null : lev,
         headroomPct: isUpcoming ? null : +(((5.75 - lev) / 5.75) * 100).toFixed(1),
@@ -732,7 +735,7 @@ async function seedFlagship(
     await db.covenantTest.create({
       data: {
         covenantId: covFccr.id,
-        periodEnd: D(q.y, q.m, 30),
+        periodEnd: monthEnd(q.y, q.m),
         testDate: D(q.m + 1 > 12 ? q.y + 1 : q.y, q.m + 1 > 12 ? 1 : q.m + 1, 15),
         actual: isUpcoming ? null : fccr,
         headroomPct: isUpcoming ? null : +(((fccr - 1.5) / 1.5) * 100).toFixed(1),
@@ -743,7 +746,7 @@ async function seedFlagship(
     await db.covenantTest.create({
       data: {
         covenantId: covLiq.id,
-        periodEnd: D(q.y, q.m, 30),
+        periodEnd: monthEnd(q.y, q.m),
         testDate: D(q.m + 1 > 12 ? q.y + 1 : q.y, q.m + 1 > 12 ? 1 : q.m + 1, 15),
         actual: isUpcoming ? null : liq,
         headroomPct: isUpcoming ? null : +(((liq - 10) / 10) * 100).toFixed(1),
@@ -1012,7 +1015,7 @@ async function seedFlagship(
     await db.cashFlowSchedule.create({
       data: {
         dealId: deal.id,
-        periodEnd: D(year, m, 30),
+        periodEnd: monthEnd(year, m),
         periodLabel: `Q${(i % 4) + 1} ${year}`,
         beginningBal: bal,
         drawdown,

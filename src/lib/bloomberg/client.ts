@@ -135,8 +135,7 @@ export class MockBloombergClient implements BloombergClient {
       const base = 4.35; // SOFR proxy
       const allIn = base + spread / 100 + oid / 5;
       const monthsAgo = Math.floor(rng() * 14);
-      const d = new Date(2026, 5, 1);
-      d.setMonth(d.getMonth() - monthsAgo);
+      const d = new Date(Date.UTC(2026, 5 - monthsAgo, 1));
       return {
         borrower: pick(rng, COMP_BORROWERS) + ` ${i + 1}`,
         sector,

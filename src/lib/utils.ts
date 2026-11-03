@@ -45,10 +45,15 @@ export function fmtPct(
 }
 
 /** Format an ISO date string as "MMM d, yyyy". */
+// Calendar dates (period ends, test dates, maturities) are stored as UTC
+// midnight. Format them in UTC: in the viewer's local zone, anyone west of
+// Greenwich sees the previous day, and a client component's render disagrees
+// with the server's, which React reports as a hydration error.
 export function fmtDate(iso: string | Date | null | undefined): string {
   if (!iso) return "—";
   const d = typeof iso === "string" ? new Date(iso) : iso;
   return d.toLocaleDateString("en-US", {
+    timeZone: "UTC",
     year: "numeric",
     month: "short",
     day: "numeric",
@@ -59,5 +64,5 @@ export function fmtDate(iso: string | Date | null | undefined): string {
 export function fmtMonthYear(iso: string | Date | null | undefined): string {
   if (!iso) return "—";
   const d = typeof iso === "string" ? new Date(iso) : iso;
-  return d.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+  return d.toLocaleDateString("en-US", { timeZone: "UTC", month: "short", year: "2-digit" });
 }
