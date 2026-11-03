@@ -51,6 +51,7 @@ function titleCase(label) {
 function typeOf(f) {
   let base = f.baseType;
   if (f.baseType === "Decimal" && f.decimal) base = `Decimal(${f.decimal.precision},${f.decimal.scale})`;
+  if (f.baseType === "DateTime" && f.isDateOnly) base = "Date";
   return base + (f.isList ? "[]" : "") + (f.optional ? "?" : "");
 }
 function typeKind(f) {

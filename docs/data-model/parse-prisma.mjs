@@ -142,6 +142,7 @@ export function parseSchema(srcPath) {
       isId: /@id\b/.test(attrs),
       isUnique: /@unique\b/.test(attrs),
       isUpdatedAt: /@updatedAt\b/.test(attrs),
+      isDateOnly: /@db\.Date\b/.test(attrs),
       decimal: readDecimal(attrs),
       default: readDefault(attrs),
       relation: readRelation(attrs),

@@ -10,7 +10,7 @@ and their loan terms** (security master), **collateral** (collateral system)
 and **market data** (the vendor) — it holds only as a link, and reads from the
 source. See [the boundary](#the-boundary-what-this-model-owns-and-what-it-links-to).
 
-- **Schema:** [`schema.canonical.prisma`](./schema.canonical.prisma) — 61 models, 36 enums, validated.
+- **Schema:** [`schema.canonical.prisma`](./schema.canonical.prisma) — 62 models, 38 enums, validated.
 - **XSD view:** [`schema.canonical.xsd`](./schema.canonical.xsd) — the same model as XML Schema,
   generated from the Prisma file. Often the faster read: types, enums and foreign keys are all
   spelled out in one place. See [§8](#8-xsd-view).
@@ -81,7 +81,7 @@ the other way:
 
 ### Rules applied throughout
 
-Seven rules drive most of the structural differences from a naive model.
+Eight rules drive most of the structural differences from a naive model.
 
 | # | Principle | Why it matters |
 |---|---|---|
@@ -92,6 +92,7 @@ Seven rules drive most of the structural differences from a naive model.
 | 5 | **Amounts travel with a currency** | A single-currency assumption is unpickable later. FX rates are market data, read from the vendor at roll-up time. |
 | 6 | **Real-world identifiers are effective-dated rows, never columns** | A tranche has no CUSIP at sourcing, gains one at close, and an amend-and-extend retires its LoanX ID. A nullable `cusip` column can represent none of that. See [`InstrumentIdentifier`](#37-identifiers--cross-references). |
 | 7 | **Systems of record are linked, never copied** | A copy of a borrower's details or a loan's terms is stale the first time the source changes. A link cannot be. |
+| 8 | **Calendar dates are `@db.Date`** | Period ends, as-of, due and effective dates are days, not instants. Stored as a timestamp at UTC midnight, 30 June reads as 29 June anywhere west of Greenwich. |
 
 Two further choices are worth calling out:
 
@@ -114,7 +115,7 @@ Two further choices are worth calling out:
 | 3 | Deal, pipeline & committee | 13 | `Deal` `StageTransition` `Milestone` `DealAdvisor` `ICMeeting` `ICAgendaItem` `ICVote` `CreditMemo` `MemoVersion` `MemoSection` `Task` `Note` `Comment` |
 | 4 | Data room & diligence | 8 | `Folder` `Document` `DocumentVersion` `DocumentAccessGrant` `DocumentEvent` `DiligenceItem` `QAThread` `QAMessage` |
 | 5 | Tranches, term sheets & amendments | 4 | `Facility` `TermSheet` `Amendment` `AmendmentConsent` |
-| 6 | Financials & covenants | 9 | `FieldDefinition` `FinancialPeriod` `FundamentalFact` `EbitdaAdjustment` `CovenantDefinition` `CovenantThresholdStep` `CovenantTest` `ReportingObligation` `ReportingDelivery` |
+| 6 | Financials & covenants | 10 | `FieldDefinition` `FinancialPeriod` `FundamentalFact` `EbitdaAdjustment` `EbitdaDefinition` `CovenantDefinition` `CovenantThresholdStep` `CovenantTest` `ReportingObligation` `ReportingDelivery` |
 | 7 | Funds, positions & returns | 6 | `Fund` `Allocation` `Position` `PositionTransaction` `Valuation` `ReturnSnapshot` |
 | 8 | Risk, alerts & dashboard support | 5 | `RatingHistory` `WatchlistEvent` `KpiSnapshot` `Alert` `SavedView` |
 | 9 | Identifiers & cross-references | 1 | `InstrumentIdentifier` |
@@ -123,7 +124,7 @@ Two further choices are worth calling out:
 
 ## 3. Entity–relationship diagrams
 
-Split by domain — one diagram for 61 models would be unreadable. Links (domain 2) are drawn
+Split by domain — one diagram for 62 models would be unreadable. Links (domain 2) are drawn
 where they are used.
 
 ### 3.1 Identity, access & the information barrier
@@ -154,12 +155,13 @@ erDiagram
   Deal ||--o{ Milestone : "tracks"
   Deal ||--o{ DealAdvisor : "engages"
   Advisor ||--o{ DealAdvisor : "advises"
-  Deal ||--|| CreditMemo : "documented by"
+  Deal ||--o{ CreditMemo : "decided with"
   CreditMemo ||--o{ MemoVersion : "versioned as"
   MemoVersion ||--o{ MemoSection : "contains"
   Deal ||--o{ ICAgendaItem : "tabled at"
   ICMeeting ||--o{ ICAgendaItem : "agenda"
-  Deal ||--o{ ICVote : "decided by"
+  ICAgendaItem ||--o{ ICVote : "voted on"
+  MemoVersion |o--o{ ICAgendaItem : "read at"
 ```
 
 ### 3.3 Data room & diligence
@@ -207,6 +209,8 @@ erDiagram
   FinancialPeriod ||--o{ FundamentalFact : "contains"
   FieldDefinition ||--o{ FundamentalFact : "types"
   Company ||--o{ EbitdaAdjustment : "add-back bridge"
+  Deal ||--o{ EbitdaDefinition : "defines EBITDA as"
+  EbitdaDefinition |o--o{ CovenantDefinition : "measured with"
   Deal ||--o{ CovenantDefinition : "covenanted by"
   CovenantDefinition ||--o{ CovenantThresholdStep : "steps down"
   CovenantDefinition ||--o{ CovenantTest : "tested as"
@@ -224,7 +228,7 @@ erDiagram
   Fund ||--o{ Position : "holds"
   Instrument ||--o{ Position : "held as"
   Position ||--o{ PositionTransaction : "cash flows"
-  Position ||--o{ Valuation : "marked at"
+  Instrument ||--o{ Valuation : "marked at"
   Position ||--o{ ReturnSnapshot : "performance"
   Fund ||--o{ ReturnSnapshot : "aggregate performance"
 ```
@@ -276,7 +280,9 @@ for the rest; the schema file carries inline commentary on every one.)
 | `AuditEvent` | Append-only audit with before/after payloads | `action`, `entityType`, `entityId`, `before`/`after` `Json` |
 | `Company` · `Sponsor` · `Advisor` · `Lender` · `Instrument` · `Collateral` | Links to the entity master, security master and collateral system | `id`, `orgId` (or `dealId` for collateral) and `masterRef` only; unique per org on `masterRef` |
 | `StageTransition` | Every pipeline stage change | `fromStage`, `toStage`, `daysInPrior` denormalized for cheap velocity math |
+| `CreditMemo` | The memo behind one credit decision | `purpose`: initial, add-on, amendment, annual review — a deal accumulates them |
 | `MemoVersion` / `MemoSection` | Real memo version history | `@@unique([memoId, versionNo])`; `CreditMemo.currentVersionId` points at the live one |
+| `ICVote` | One member's vote on one agenda item | `@@unique([agendaItemId, voterId])`, so a deal back at committee is voted on afresh and earlier votes stay on record |
 | `DocumentVersion` | Real file versions | `checksum`, `storageKey`, `extractedText` (search + AI grounding) |
 | `DocumentAccessGrant` | Deny-by-default access to a doc *or* folder, for a user *or* team | `canView`/`canDownload`, `expiresAt` |
 | `DocumentEvent` | View/download/print audit trail | the record LPs and regulators ask for |
@@ -284,13 +290,15 @@ for the rest; the schema file carries inline commentary on every one.)
 | `TermSheet` | Versioned structure and terms proposed for a deal | `terms` `Json` snapshot; `ICAgendaItem.termSheetId` records which version a committee approved |
 | `AmendmentConsent` | A lender's consent vote | threshold and holdings at the record date come from the security master's lender register |
 | `FieldDefinition` | Governed field vocabulary | `aggregation` (FLOW/STOCK/DERIVED), `bloombergMnemonic`, `deriveFormula` |
-| `FundamentalFact` | Every financial value, by field & period | `@@unique([companyId, periodEnd, fieldCode, source])` — sources layer, overrides win |
+| `FundamentalFact` | Every financial value, by field & period | `@@unique([companyId, periodEnd, periodType, isActual, fieldCode, source])` — a quarter and the LTM to the same date are different facts; sources layer, overrides win |
+| `EbitdaDefinition` | How the agreement defines covenant EBITDA | base field + `addbackCapPct`, shared by every covenant that uses it, so leverage and coverage cannot disagree |
 | `EbitdaAdjustment` | GAAP→Adjusted bridge | `isCapped`/`isUncapped`/`isAggressive` let the permitted amount be *computed*, so the cap binds |
 | `CovenantThresholdStep` | Step-down schedule as rows | queryable and chartable, unlike a JSON blob |
 | `CovenantTest` | One test, both numbers | `recomputedValue` vs `reportedValue` + `reconDelta`; `formulaSnapshot` makes the math auditable |
-| `Position` | A fund's holding in an instrument | the unit exposure, marks and returns roll up from |
+| `Position` | A fund's holding in an instrument | the unit exposure and returns roll up from; unique per fund and instrument among *open* positions, so a fund can exit and re-enter |
+| `Valuation` | The mark for an instrument on a date | one price per instrument per date across all our funds; a position's fair value is par × price, computed rather than stored |
 | `PositionTransaction` | Dated, signed cash flows | the XIRR input; realized/unrealized split |
-| `KpiSnapshot` | Generic metric time-series | `@@unique([orgId, asOf, scopeType, scopeId, metric])` — new tiles need no new tables |
+| `KpiSnapshot` | Generic metric time-series | `@@unique([orgId, asOf, scopeType, scopeId, metric])` with `scopeId` `""` for org scope, since NULLs never collide in a unique key — new tiles need no new tables |
 | `Alert` | Dashboard alert inbox | `dedupeKey` so a recurring condition updates one alert instead of spamming |
 | `SavedView` | Per-user dashboard filters/layout | `route` + `filters` `Json` |
 | `InstrumentIdentifier` | CUSIP, ISIN, LoanX, FIGI, LEI, Bloomberg ID, agent and admin refs | effective-dated (`validFrom`/`validTo`); exactly one target; live-value uniqueness via partial indexes; check digits validated on write |
@@ -312,13 +320,13 @@ model is the source of record; anything else is read through a link at query tim
 | Probability-weighted pipeline | `Deal.probability`, `Deal.targetHold` | Here |
 | Committed vs funded capital | `Position`; each instrument's commitment and drawn balance | Here + security master |
 | Exposure by sector / sponsor / fund | `Position` → `Instrument`; sector and owner via the `Company` link | Here + entity master |
-| Portfolio marks & NAV | `Valuation` (position-level) | Here |
+| Portfolio marks & NAV | `Valuation` (instrument-level) × `Position.parAmount` | Here |
 | IRR / MOIC tiles | `PositionTransaction`, `ReturnSnapshot` | Here |
 | Cash-flow forecast | the instrument's cash-flow schedule | Security master |
 | Covenant status heatmap | `CovenantTest.status` | Here |
 | Covenant headroom trend vs step-downs | `CovenantTest.headroomPct`, `CovenantThresholdStep` | Here |
 | Reconciliation exceptions | `CovenantTest.reconDelta` + `RECON_FLAG` | Here |
-| Adjusted-EBITDA quality / cap breach | `EbitdaAdjustment.isCapped/isUncapped/isAggressive` | Here |
+| Adjusted-EBITDA quality / cap breach | `EbitdaAdjustment.capTreatment` + `isAggressive`, `EbitdaDefinition.addbackCapPct` | Here |
 | Reporting calendar & late filings | `ReportingObligation`, `ReportingDelivery` | Here |
 | Watchlist | `WatchlistEvent` | Here |
 | **Rating migration matrix** | `RatingHistory` | Here |
@@ -361,7 +369,10 @@ monitoring well. This model closes the structural gaps.
 | `Document.version` **integer** | `DocumentVersion` rows + `DocumentEvent` + `DocumentAccessGrant` | no history, no audit, no per-user access today |
 | `Deal.stage` **scalar** | `StageTransition` | pipeline velocity is uncomputable from an overwritten field |
 | `Borrower.riskRating` / `watchlist` **scalars** | `RatingHistory`, `WatchlistEvent` | rating migration needs history |
-| `Valuation` hangs off **Borrower** | `Valuation` on **`Position`** | marks belong to a holding, not a company |
+| `Valuation` hangs off **Borrower** | `Valuation` on **`Instrument`**, one mark per date | a mark prices an instrument; two funds holding it must carry the same price |
+| `CreditMemo.dealId` unique; `ICVote` unique per deal and voter | memos per decision; votes per agenda item | a deal returns to committee for add-ons, amendments and annual reviews |
+| `EbitdaAdjustment` `capped` + `uncapped` booleans | one `capTreatment` | two flags let an add-back be both, and say nothing when neither is set |
+| Period ends stored as timestamps | `@db.Date` | a calendar date has no time zone to be wrong in |
 | *(absent)* | `Fund`, `Allocation`, `Position`, `PositionTransaction`, `ReturnSnapshot` | no portfolio/fund layer exists today |
 | *(absent)* | `Lender` and `Collateral` links | consent votes and collateral diligence need something to point at; the lender register, obligors and collateral details stay in their systems |
 | `LifecycleEvent` (generic) | `Amendment` + `AmendmentConsent` | consent thresholds and voting need structure |
@@ -429,7 +440,7 @@ node docs/data-model/generate-xsd.mjs          # or: npm run docs:xsd
 |---|---|
 | Target namespace | `urn:lumen:private-credit-deal-room:1.0` |
 | Document element | `DealRoomDataset` — one optional collection per entity type |
-| Contents | 61 `xs:complexType` entities · 36 `xs:simpleType` enumerations · 62 `xs:key` · 117 `xs:keyref` |
+| Contents | 62 `xs:complexType` entities · 38 `xs:simpleType` enumerations · 63 `xs:key` · 123 `xs:keyref` |
 
 ### How the Prisma model maps onto it
 
@@ -440,6 +451,7 @@ node docs/data-model/generate-xsd.mjs          # or: npm run docs:xsd
 | Relation field (`deal Deal @relation(...)`) | *omitted* | A navigation, not data. The scalar FK it maps to is what appears. |
 | Scalar FK (`dealId String`) | `<xs:element name="dealId" type="pc:Cuid">` + `xs:keyref` | So validation checks referential integrity, not just shape. |
 | `Decimal @db.Decimal(20,4)` | `pc:Money` | Named simple types carry `totalDigits`/`fractionDigits`: `Money` (20,4), `Ratio` (18,6), `Percent` (9,4), `MetricValue` (24,6). The generator names any other precision it meets (it knows `RatePercent` and `FxFactor` for rate and FX tables, which now live with the vendor). |
+| `DateTime @db.Date` | `xs:date` | Calendar dates validate as dates, so a timestamp where a period end belongs is rejected. |
 | `Json` | `pc:Json` | Mixed content — carry the JSON as text, or as lax-validated child elements. |
 | `String[]` | repeating element, `minOccurs="0" maxOccurs="unbounded"` | |
 | `?` | `minOccurs="0"` | |
@@ -468,6 +480,8 @@ Constraints that actually bite, verified by mutating that file:
 | Point `dealId` at a deal that isn't in the document | `No match found for key-sequence ['deal_typo'] of keyref 'fk_Facility_dealId'` |
 | Set a `CovenantTest.status` of `PROBABLY_FINE` | `not an element of the set {'PASS', 'NEAR_BREACH', 'BREACH', 'RECON_FLAG', …}` |
 | Give a `Ratio` seven decimal places | `has more fractional digits than are allowed ('6')` |
+| Give a period end a time of day | `'2026-06-30T00:00:00Z' is not a valid value of the atomic type 'xs:date'` |
+| Mark a position instead of its instrument | `No match found for key-sequence ['pos_1'] of keyref 'fk_Valuation_instrumentId'` |
 
 ### Limits worth knowing
 
@@ -504,7 +518,7 @@ What it gives you that the diagrams in §3 cannot:
 | **Columns** | Type, nullability, defaults, PK/unique flags and the `///` note for each column. Enum types are links — click `DealStage` and you get its values and every column that uses it. |
 | **Trail** | A breadcrumb of the path you took, so a four-hop dive is retraceable and each step is clickable. |
 | **Search** | Matches entity names *and* column names — typing `ebitda` finds the three entities that carry one. |
-| **Degree** | The number beside each entity in the sidebar is its edge count, so the hubs are obvious: `User` 33, `Deal` 26, `Organization` 14. |
+| **Degree** | The number beside each entity in the sidebar is its edge count, so the hubs are obvious: `User` 33, `Deal` 26, `Organization` 16. |
 
 Deep links work: `explorer.html#CovenantTest` opens straight to that entity.
 The page remembers the last entity you looked at, follows your light/dark

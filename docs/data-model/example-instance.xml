@@ -131,8 +131,8 @@
       <totalDealSize>185000000.0000</totalDealSize>
       <probability>100</probability>
       <useOfProceeds>LBO financing and a delayed-draw acquisition line.</useOfProceeds>
-      <targetCloseOn>2026-01-30T00:00:00Z</targetCloseOn>
-      <closedOn>2026-01-28T00:00:00Z</closedOn>
+      <targetCloseOn>2026-01-30</targetCloseOn>
+      <closedOn>2026-01-28</closedOn>
       <isPrivileged>true</isPrivileged>
       <createdAt>2025-11-04T00:00:00Z</createdAt>
     </Deal>
@@ -145,6 +145,7 @@
   <ICMeetings>
     <ICMeeting>
       <id>icm_2026_01_14</id>
+      <orgId>org_lumen</orgId>
       <title>Investment Committee — 14 January 2026</title>
       <heldAt>2026-01-14T15:00:00Z</heldAt>
     </ICMeeting>
@@ -190,6 +191,12 @@
   <!-- ── Governed field vocabulary the covenant formulas resolve against ── -->
   <FieldDefinitions>
     <FieldDefinition>
+      <id>fld_ebitda</id><code>EBITDA</code>
+      <label>EBITDA (as reported)</label><unit>currency</unit>
+      <aggregation>FLOW</aggregation>
+      <bloombergMnemonic>EBITDA</bloombergMnemonic>
+    </FieldDefinition>
+    <FieldDefinition>
       <id>fld_ebitda_adj</id><code>EBITDA_ADJ</code>
       <label>Covenant Adjusted EBITDA</label><unit>currency</unit>
       <aggregation>FLOW</aggregation>
@@ -213,7 +220,7 @@
     <FinancialPeriod>
       <id>per_q2_2026</id>
       <companyId>cmp_arcline</companyId>
-      <periodEnd>2026-06-30T00:00:00Z</periodEnd>
+      <periodEnd>2026-06-30</periodEnd>
       <periodType>LTM</periodType>
       <label>LTM Q2 2026</label>
       <currency>USD</currency>
@@ -227,15 +234,15 @@
   <FundamentalFacts>
     <FundamentalFact>
       <id>fct_1</id><companyId>cmp_arcline</companyId><periodId>per_q2_2026</periodId>
-      <periodEnd>2026-06-30T00:00:00Z</periodEnd><periodType>LTM</periodType>
-      <fieldCode>EBITDA_ADJ</fieldCode><value>47600000.0000</value>
+      <periodEnd>2026-06-30</periodEnd><periodType>LTM</periodType><isActual>true</isActual>
+      <fieldCode>EBITDA_ADJ</fieldCode><value>47600000.0000</value><currency>USD</currency>
       <source>BLOOMBERG</source><isOverride>false</isOverride>
       <recordedAt>2026-08-12T09:15:00Z</recordedAt>
     </FundamentalFact>
     <FundamentalFact>
       <id>fct_2</id><companyId>cmp_arcline</companyId><periodId>per_q2_2026</periodId>
-      <periodEnd>2026-06-30T00:00:00Z</periodEnd><periodType>LTM</periodType>
-      <fieldCode>EBITDA_ADJ</fieldCode><value>44900000.0000</value>
+      <periodEnd>2026-06-30</periodEnd><periodType>LTM</periodType><isActual>true</isActual>
+      <fieldCode>EBITDA_ADJ</fieldCode><value>44900000.0000</value><currency>USD</currency>
       <source>OVERRIDE</source><isOverride>true</isOverride>
       <overriddenById>usr_okafor</overriddenById>
       <note>Disallowed 2.7mm of unrealized cost synergies above the 25% add-back cap.</note>
@@ -243,21 +250,33 @@
     </FundamentalFact>
     <FundamentalFact>
       <id>fct_3</id><companyId>cmp_arcline</companyId><periodId>per_q2_2026</periodId>
-      <periodEnd>2026-06-30T00:00:00Z</periodEnd><periodType>LTM</periodType>
-      <fieldCode>TOT_DEBT</fieldCode><value>232000000.0000</value>
+      <periodEnd>2026-06-30</periodEnd><periodType>LTM</periodType><isActual>true</isActual>
+      <fieldCode>TOT_DEBT</fieldCode><value>232000000.0000</value><currency>USD</currency>
       <source>COMPLIANCE_CERT</source><isOverride>false</isOverride>
       <recordedAt>2026-08-12T09:15:00Z</recordedAt>
     </FundamentalFact>
     <FundamentalFact>
       <id>fct_4</id><companyId>cmp_arcline</companyId><periodId>per_q2_2026</periodId>
-      <periodEnd>2026-06-30T00:00:00Z</periodEnd><periodType>LTM</periodType>
-      <fieldCode>CASH</fieldCode><value>18500000.0000</value>
+      <periodEnd>2026-06-30</periodEnd><periodType>LTM</periodType><isActual>true</isActual>
+      <fieldCode>CASH</fieldCode><value>18500000.0000</value><currency>USD</currency>
       <source>COMPLIANCE_CERT</source><isOverride>false</isOverride>
       <recordedAt>2026-08-12T09:15:00Z</recordedAt>
     </FundamentalFact>
   </FundamentalFacts>
 
   <!-- ── Covenant: definition, step-down schedule, one test ────────────── -->
+  <!-- The agreement defines covenant EBITDA once; every covenant that uses it
+       points here, so the cap cannot differ between leverage and coverage. -->
+  <EbitdaDefinitions>
+    <EbitdaDefinition>
+      <id>ebd_lantern</id><dealId>deal_arcline</dealId>
+      <name>Consolidated EBITDA</name>
+      <baseFieldCode>EBITDA</baseFieldCode>
+      <addbackCapPct>25.0000</addbackCapPct>
+      <sourceRef>Credit Agreement §1.01, "Consolidated EBITDA"</sourceRef>
+    </EbitdaDefinition>
+  </EbitdaDefinitions>
+
   <CovenantDefinitions>
     <CovenantDefinition>
       <id>cov_arcline_lev</id>
@@ -269,12 +288,11 @@
       <fieldRefs>TOT_DEBT</fieldRefs>
       <fieldRefs>CASH</fieldRefs>
       <fieldRefs>EBITDA_ADJ</fieldRefs>
-      <ebitdaBasis>EBITDA_ADJ</ebitdaBasis>
+      <ebitdaDefinitionId>ebd_lantern</ebitdaDefinitionId>
       <operator>LTE</operator>
       <unit>x</unit>
       <threshold>5.500000</threshold>
       <frequency>Quarterly</frequency>
-      <addbackCapPct>25.0000</addbackCapPct>
       <sourceRef>Credit Agreement §7.11(a)</sourceRef>
       <isActive>true</isActive>
       <createdAt>2026-01-28T00:00:00Z</createdAt>
@@ -284,15 +302,15 @@
   <CovenantThresholdSteps>
     <CovenantThresholdStep>
       <id>stp_1</id><definitionId>cov_arcline_lev</definitionId>
-      <effectiveFrom>2026-01-28T00:00:00Z</effectiveFrom><value>5.500000</value>
+      <effectiveFrom>2026-01-28</effectiveFrom><value>5.500000</value>
     </CovenantThresholdStep>
     <CovenantThresholdStep>
       <id>stp_2</id><definitionId>cov_arcline_lev</definitionId>
-      <effectiveFrom>2027-01-01T00:00:00Z</effectiveFrom><value>5.000000</value>
+      <effectiveFrom>2027-01-01</effectiveFrom><value>5.000000</value>
     </CovenantThresholdStep>
     <CovenantThresholdStep>
       <id>stp_3</id><definitionId>cov_arcline_lev</definitionId>
-      <effectiveFrom>2028-01-01T00:00:00Z</effectiveFrom><value>4.500000</value>
+      <effectiveFrom>2028-01-01</effectiveFrom><value>4.500000</value>
     </CovenantThresholdStep>
   </CovenantThresholdSteps>
 
@@ -302,8 +320,8 @@
     <CovenantTest>
       <id>tst_q2_2026</id>
       <definitionId>cov_arcline_lev</definitionId>
-      <periodEnd>2026-06-30T00:00:00Z</periodEnd>
-      <testDate>2026-08-14T00:00:00Z</testDate>
+      <periodEnd>2026-06-30</periodEnd>
+      <testDate>2026-08-14</testDate>
       <recomputedValue>4.755011</recomputedValue>
       <reportedValue>4.485294</reportedValue>
       <reconDelta>0.269717</reconDelta>
@@ -325,7 +343,7 @@
       <vintage>2024</vintage>
       <currency>USD</currency>
       <committedCapital>2400000000.0000</committedCapital>
-      <inceptionOn>2024-04-01T00:00:00Z</inceptionOn>
+      <inceptionOn>2024-04-01</inceptionOn>
     </Fund>
   </Funds>
 
@@ -338,18 +356,17 @@
       <parAmount>120000000.0000</parAmount>
       <fundedAmount>112500000.0000</fundedAmount>
       <costBasis>110250000.0000</costBasis>
-      <openedOn>2026-01-28T00:00:00Z</openedOn>
+      <openedOn>2026-01-28</openedOn>
     </Position>
   </Positions>
 
   <Valuations>
     <Valuation>
       <id>val_q2_2026</id>
-      <positionId>pos_1</positionId>
-      <asOf>2026-06-30T00:00:00Z</asOf>
+      <instrumentId>ins_arcline_uni</instrumentId>
+      <asOf>2026-06-30</asOf>
       <method>YIELD</method>
       <pricePctOfPar>98.7500</pricePctOfPar>
-      <fairValue>111093750.0000</fairValue>
       <discountRate>11.2500</discountRate>
       <status>FINAL</status>
       <preparedById>usr_okafor</preparedById>
@@ -362,12 +379,13 @@
     <ReturnSnapshot>
       <id>ret_1</id>
       <positionId>pos_1</positionId>
-      <asOf>2026-06-30T00:00:00Z</asOf>
+      <asOf>2026-06-30</asOf>
       <grossIrrPct>11.8400</grossIrrPct>
       <netIrrPct>9.9100</netIrrPct>
       <moic>1.0410</moic>
       <realized>4820000.0000</realized>
       <unrealized>111093750.0000</unrealized>
+      <currency>USD</currency>
     </ReturnSnapshot>
   </ReturnSnapshots>
 
@@ -396,32 +414,32 @@
     <InstrumentIdentifier>
       <id>iid_1</id><orgId>org_lumen</orgId><companyId>cmp_arcline</companyId>
       <scheme>BBG_COMPANY</scheme><value>999900101</value><namespace/>
-      <validFrom>2021-01-04T00:00:00Z</validFrom><source>BLOOMBERG</source>
+      <validFrom>2021-01-04</validFrom><source>BLOOMBERG</source>
       <createdAt>2025-11-04T00:00:00Z</createdAt>
     </InstrumentIdentifier>
     <InstrumentIdentifier>
       <id>iid_2</id><orgId>org_lumen</orgId><instrumentId>ins_arcline_uni</instrumentId>
       <scheme>AGENT_FACILITY</scheme><value>LANTERN-UNI-1</value><namespace>LUMEN AGENCY SERVICES</namespace>
-      <validFrom>2026-01-28T00:00:00Z</validFrom><source>AGENT_NOTICE</source>
+      <validFrom>2026-01-28</validFrom><source>AGENT_NOTICE</source>
       <createdAt>2026-01-28T00:00:00Z</createdAt>
     </InstrumentIdentifier>
     <InstrumentIdentifier>
       <id>iid_3</id><orgId>org_lumen</orgId><instrumentId>ins_arcline_uni</instrumentId>
       <scheme>CUSIP</scheme><value>LMN101AB5</value><namespace/>
-      <validFrom>2026-01-28T00:00:00Z</validFrom><source>CUSIP_GLOBAL</source>
+      <validFrom>2026-01-28</validFrom><source>CUSIP_GLOBAL</source>
       <verifiedById>usr_reyes</verifiedById><verifiedAt>2026-01-29T10:00:00Z</verifiedAt>
       <createdAt>2026-01-28T00:00:00Z</createdAt>
     </InstrumentIdentifier>
     <InstrumentIdentifier>
       <id>iid_4</id><orgId>org_lumen</orgId><instrumentId>ins_arcline_uni</instrumentId>
       <scheme>ISIN</scheme><value>USLMN101AB52</value><namespace/>
-      <validFrom>2026-01-28T00:00:00Z</validFrom><source>CUSIP_GLOBAL</source>
+      <validFrom>2026-01-28</validFrom><source>CUSIP_GLOBAL</source>
       <createdAt>2026-01-28T00:00:00Z</createdAt>
     </InstrumentIdentifier>
     <InstrumentIdentifier>
       <id>iid_5</id><orgId>org_lumen</orgId><instrumentId>ins_arcline_uni</instrumentId>
       <scheme>LOANX</scheme><value>LX900101</value><namespace/>
-      <validFrom>2026-02-10T00:00:00Z</validFrom><source>MARKIT</source>
+      <validFrom>2026-02-10</validFrom><source>MARKIT</source>
       <createdAt>2026-02-10T00:00:00Z</createdAt>
     </InstrumentIdentifier>
   </InstrumentIdentifiers>

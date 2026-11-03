@@ -7,8 +7,8 @@
     source:    docs/data-model/schema.canonical.prisma
     generator: docs/data-model/generate-xsd.mjs   (node generate-xsd.mjs)
 
-  This is a reading/interchange projection of the canonical model: 61 entity
-  types, 36 enumerations, and root-level key/keyref pairs mirroring the
+  This is a reading/interchange projection of the canonical model: 62 entity
+  types, 38 enumerations, and root-level key/keyref pairs mirroring the
   relational foreign keys. Validating an instance therefore checks referential
   integrity, not just shape.
 
@@ -282,6 +282,26 @@
       <xs:enumeration value="OPEN"/>
       <xs:enumeration value="ANSWERED"/>
       <xs:enumeration value="CLOSED"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="MemoPurpose">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="INITIAL"/>
+      <xs:enumeration value="ADD_ON"/>
+      <xs:enumeration value="AMENDMENT"/>
+      <xs:enumeration value="ANNUAL_REVIEW"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="CapTreatment">
+    <xs:annotation>
+      <xs:documentation>How an add-back counts toward covenant EBITDA under the agreement.</xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="CAPPED"/>
+      <xs:enumeration value="UNCAPPED"/>
+      <xs:enumeration value="EXCLUDED"/>
     </xs:restriction>
   </xs:simpleType>
 
@@ -592,7 +612,7 @@
 
   <xs:complexType name="DealTeamMember">
     <xs:annotation>
-      <xs:documentation>A user's seat on a specific deal. Wall-cross state lives in WallCrossEvent; this row carries the current denormalized flag for fast filtering. Unique: (dealId, userId).</xs:documentation>
+      <xs:documentation>A user's seat on a specific deal. Wall-cross state lives in WallCrossEvent; this row carries the current denormalized flag for fast filtering.</xs:documentation>
     </xs:annotation>
     <xs:sequence>
       <xs:element name="id" type="pc:Cuid">
@@ -695,6 +715,11 @@
       <xs:element name="id" type="pc:Cuid">
         <xs:annotation>
           <xs:documentation>Primary key.</xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element name="orgId" type="pc:Cuid">
+        <xs:annotation>
+          <xs:documentation>Foreign key → Organization.id.</xs:documentation>
         </xs:annotation>
       </xs:element>
       <xs:element name="dealId" type="pc:Cuid" minOccurs="0">
@@ -913,8 +938,8 @@
       </xs:element>
       <xs:element name="useOfProceeds" type="xs:string" minOccurs="0"/>
       <xs:element name="thesis" type="xs:string" minOccurs="0"/>
-      <xs:element name="targetCloseOn" type="xs:dateTime" minOccurs="0"/>
-      <xs:element name="closedOn" type="xs:dateTime" minOccurs="0"/>
+      <xs:element name="targetCloseOn" type="xs:date" minOccurs="0"/>
+      <xs:element name="closedOn" type="xs:date" minOccurs="0"/>
       <xs:element name="isPrivileged" type="xs:boolean" default="true">
         <xs:annotation>
           <xs:documentation>Information-barrier flag: privileged deals are hidden from non-crossed users. Defaults to true.</xs:documentation>
@@ -969,7 +994,7 @@
         </xs:annotation>
       </xs:element>
       <xs:element name="name" type="xs:string"/>
-      <xs:element name="dueOn" type="xs:dateTime" minOccurs="0"/>
+      <xs:element name="dueOn" type="xs:date" minOccurs="0"/>
       <xs:element name="completedAt" type="xs:dateTime" minOccurs="0"/>
     </xs:sequence>
   </xs:complexType>
@@ -1007,6 +1032,11 @@
           <xs:documentation>Primary key.</xs:documentation>
         </xs:annotation>
       </xs:element>
+      <xs:element name="orgId" type="pc:Cuid">
+        <xs:annotation>
+          <xs:documentation>Foreign key → Organization.id.</xs:documentation>
+        </xs:annotation>
+      </xs:element>
       <xs:element name="title" type="xs:string"/>
       <xs:element name="heldAt" type="xs:dateTime"/>
       <xs:element name="minutes" type="xs:string" minOccurs="0"/>
@@ -1038,13 +1068,18 @@
           <xs:documentation>The terms put to this committee — the version its decision applies to. Foreign key → TermSheet.id.</xs:documentation>
         </xs:annotation>
       </xs:element>
+      <xs:element name="memoVersionId" type="pc:Cuid" minOccurs="0">
+        <xs:annotation>
+          <xs:documentation>The memo version the committee read. Foreign key → MemoVersion.id.</xs:documentation>
+        </xs:annotation>
+      </xs:element>
       <xs:element name="outcome" type="xs:string" minOccurs="0"/>
     </xs:sequence>
   </xs:complexType>
 
   <xs:complexType name="ICVote">
     <xs:annotation>
-      <xs:documentation>Unique: (dealId, voterId).</xs:documentation>
+      <xs:documentation>One member's vote on one agenda item. A deal that returns to committee — for an add-on, an amendment or an annual review — gets a new agenda item, so its earlier votes stay on the record. Unique: (agendaItemId, voterId).</xs:documentation>
     </xs:annotation>
     <xs:sequence>
       <xs:element name="id" type="pc:Cuid">
@@ -1052,14 +1087,9 @@
           <xs:documentation>Primary key.</xs:documentation>
         </xs:annotation>
       </xs:element>
-      <xs:element name="dealId" type="pc:Cuid">
+      <xs:element name="agendaItemId" type="pc:Cuid">
         <xs:annotation>
-          <xs:documentation>Foreign key → Deal.id.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="meetingId" type="pc:Cuid" minOccurs="0">
-        <xs:annotation>
-          <xs:documentation>Foreign key → ICMeeting.id.</xs:documentation>
+          <xs:documentation>Foreign key → ICAgendaItem.id.</xs:documentation>
         </xs:annotation>
       </xs:element>
       <xs:element name="voterId" type="pc:Cuid">
@@ -1079,6 +1109,9 @@
   </xs:complexType>
 
   <xs:complexType name="CreditMemo">
+    <xs:annotation>
+      <xs:documentation>The memo behind one credit decision on a deal: the initial approval, an add-on, an amendment or an annual review. A deal accumulates them.</xs:documentation>
+    </xs:annotation>
     <xs:sequence>
       <xs:element name="id" type="pc:Cuid">
         <xs:annotation>
@@ -1087,7 +1120,12 @@
       </xs:element>
       <xs:element name="dealId" type="pc:Cuid">
         <xs:annotation>
-          <xs:documentation>Unique. Foreign key → Deal.id.</xs:documentation>
+          <xs:documentation>Foreign key → Deal.id.</xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element name="purpose" type="pc:MemoPurpose" default="INITIAL">
+        <xs:annotation>
+          <xs:documentation>Defaults to INITIAL.</xs:documentation>
         </xs:annotation>
       </xs:element>
       <xs:element name="status" type="pc:MemoStatus" default="DRAFT">
@@ -1197,7 +1235,7 @@
           <xs:documentation>Foreign key → User.id.</xs:documentation>
         </xs:annotation>
       </xs:element>
-      <xs:element name="dueOn" type="xs:dateTime" minOccurs="0"/>
+      <xs:element name="dueOn" type="xs:date" minOccurs="0"/>
       <xs:element name="completedAt" type="xs:dateTime" minOccurs="0"/>
     </xs:sequence>
   </xs:complexType>
@@ -1374,7 +1412,7 @@
 
   <xs:complexType name="DocumentAccessGrant">
     <xs:annotation>
-      <xs:documentation>Explicit grant of access to a document or an entire folder, to a user or a team. Absence of a grant = no access (deny by default).</xs:documentation>
+      <xs:documentation>Explicit grant of access to a document or an entire folder, to a user or a team. Absence of a grant = no access (deny by default). Exactly one of documentId / folderId, and exactly one of granteeId / teamId — two CHECK (num_nonnulls(...) = 1) constraints in the migration.</xs:documentation>
     </xs:annotation>
     <xs:sequence>
       <xs:element name="id" type="pc:Cuid">
@@ -1486,7 +1524,7 @@
           <xs:documentation>Foreign key → Document.id.</xs:documentation>
         </xs:annotation>
       </xs:element>
-      <xs:element name="dueOn" type="xs:dateTime" minOccurs="0"/>
+      <xs:element name="dueOn" type="xs:date" minOccurs="0"/>
       <xs:element name="order" type="xs:int" default="0">
         <xs:annotation>
           <xs:documentation>Defaults to 0.</xs:documentation>
@@ -1636,8 +1674,8 @@
       </xs:element>
       <xs:element name="title" type="xs:string"/>
       <xs:element name="description" type="xs:string" minOccurs="0"/>
-      <xs:element name="requestedOn" type="xs:dateTime"/>
-      <xs:element name="effectiveOn" type="xs:dateTime" minOccurs="0"/>
+      <xs:element name="requestedOn" type="xs:date"/>
+      <xs:element name="effectiveOn" type="xs:date" minOccurs="0"/>
     </xs:sequence>
   </xs:complexType>
 
@@ -1723,7 +1761,7 @@
           <xs:documentation>Foreign key → Company.id.</xs:documentation>
         </xs:annotation>
       </xs:element>
-      <xs:element name="periodEnd" type="xs:dateTime"/>
+      <xs:element name="periodEnd" type="xs:date"/>
       <xs:element name="periodType" type="pc:PeriodType"/>
       <xs:element name="label" type="xs:string">
         <xs:annotation>
@@ -1750,7 +1788,7 @@
 
   <xs:complexType name="FundamentalFact">
     <xs:annotation>
-      <xs:documentation>Unique: (companyId, periodEnd, fieldCode, source).</xs:documentation>
+      <xs:documentation>Unique: (companyId, periodEnd, periodType, isActual, fieldCode, source).</xs:documentation>
     </xs:annotation>
     <xs:sequence>
       <xs:element name="id" type="pc:Cuid">
@@ -1768,10 +1806,15 @@
           <xs:documentation>Foreign key → FinancialPeriod.id.</xs:documentation>
         </xs:annotation>
       </xs:element>
-      <xs:element name="periodEnd" type="xs:dateTime"/>
+      <xs:element name="periodEnd" type="xs:date"/>
       <xs:element name="periodType" type="pc:PeriodType" default="LTM">
         <xs:annotation>
           <xs:documentation>Defaults to LTM.</xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element name="isActual" type="xs:boolean" default="true">
+        <xs:annotation>
+          <xs:documentation>False for a budget or projection. Defaults to true.</xs:documentation>
         </xs:annotation>
       </xs:element>
       <xs:element name="fieldCode" type="xs:string">
@@ -1780,6 +1823,11 @@
         </xs:annotation>
       </xs:element>
       <xs:element name="value" type="pc:Money"/>
+      <xs:element name="currency" type="pc:Currency" minOccurs="0">
+        <xs:annotation>
+          <xs:documentation>Set when the field's unit is currency; null for ratios and percentages.</xs:documentation>
+        </xs:annotation>
+      </xs:element>
       <xs:element name="source" type="pc:FactSource" default="BLOOMBERG">
         <xs:annotation>
           <xs:documentation>Defaults to BLOOMBERG.</xs:documentation>
@@ -1802,7 +1850,7 @@
 
   <xs:complexType name="EbitdaAdjustment">
     <xs:annotation>
-      <xs:documentation>GAAP -&gt; covenant-defined Adjusted EBITDA bridge, with cap flags so the permitted amount can be computed rather than asserted.</xs:documentation>
+      <xs:documentation>GAAP -&gt; covenant-defined Adjusted EBITDA bridge. Each add-back records how the agreement treats it, so the permitted amount is computed, not asserted.</xs:documentation>
     </xs:annotation>
     <xs:sequence>
       <xs:element name="id" type="pc:Cuid">
@@ -1815,18 +1863,18 @@
           <xs:documentation>Foreign key → Company.id.</xs:documentation>
         </xs:annotation>
       </xs:element>
-      <xs:element name="periodEnd" type="xs:dateTime"/>
+      <xs:element name="periodEnd" type="xs:date"/>
       <xs:element name="label" type="xs:string"/>
       <xs:element name="amount" type="pc:Money"/>
-      <xs:element name="category" type="pc:AddbackCategory"/>
-      <xs:element name="isCapped" type="xs:boolean" default="false">
+      <xs:element name="currency" type="pc:Currency" default="USD">
         <xs:annotation>
-          <xs:documentation>Subject to the agreement's add-back cap (e.g. 25% of unadjusted EBITDA). Defaults to false.</xs:documentation>
+          <xs:documentation>Defaults to USD.</xs:documentation>
         </xs:annotation>
       </xs:element>
-      <xs:element name="isUncapped" type="xs:boolean" default="false">
+      <xs:element name="category" type="pc:AddbackCategory"/>
+      <xs:element name="capTreatment" type="pc:CapTreatment" default="CAPPED">
         <xs:annotation>
-          <xs:documentation>Contractually uncapped — flows through in full. Defaults to false.</xs:documentation>
+          <xs:documentation>CAPPED counts within the EBITDA definition's cap; UNCAPPED counts in full; EXCLUDED is recorded for the bridge but not permitted. Defaults to the conservative reading. Defaults to CAPPED.</xs:documentation>
         </xs:annotation>
       </xs:element>
       <xs:element name="isAggressive" type="xs:boolean" default="false">
@@ -1843,6 +1891,44 @@
       <xs:element name="order" type="xs:int" default="0">
         <xs:annotation>
           <xs:documentation>Defaults to 0.</xs:documentation>
+        </xs:annotation>
+      </xs:element>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="EbitdaDefinition">
+    <xs:annotation>
+      <xs:documentation>How a deal's agreement defines covenant EBITDA: the field it starts from and how far capped add-backs may take it. Shared by every covenant that uses it, so the leverage and fixed-charge tests cannot disagree about what EBITDA means. Unique: (dealId, name).</xs:documentation>
+    </xs:annotation>
+    <xs:sequence>
+      <xs:element name="id" type="pc:Cuid">
+        <xs:annotation>
+          <xs:documentation>Primary key.</xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element name="dealId" type="pc:Cuid">
+        <xs:annotation>
+          <xs:documentation>Foreign key → Deal.id.</xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element name="name" type="xs:string" default="Consolidated EBITDA">
+        <xs:annotation>
+          <xs:documentation>Defaults to Consolidated EBITDA.</xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element name="baseFieldCode" type="xs:string">
+        <xs:annotation>
+          <xs:documentation>The field the definition starts from, before add-backs. Foreign key → FieldDefinition.code.</xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element name="addbackCapPct" type="pc:Percent" minOccurs="0">
+        <xs:annotation>
+          <xs:documentation>Capped add-backs may not exceed this share of base EBITDA.</xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element name="sourceRef" type="xs:string" minOccurs="0">
+        <xs:annotation>
+          <xs:documentation>Note: &quot;Credit Agreement §1.01, 'Consolidated EBITDA'&quot;.</xs:documentation>
         </xs:annotation>
       </xs:element>
     </xs:sequence>
@@ -1869,9 +1955,9 @@
       </xs:element>
       <xs:element name="formulaAst" type="pc:Json"/>
       <xs:element name="fieldRefs" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
-      <xs:element name="ebitdaBasis" type="xs:string" default="EBITDA_ADJ">
+      <xs:element name="ebitdaDefinitionId" type="pc:Cuid" minOccurs="0">
         <xs:annotation>
-          <xs:documentation>Defaults to EBITDA_ADJ.</xs:documentation>
+          <xs:documentation>The EBITDA definition the formula uses, when it uses one. Foreign key → EbitdaDefinition.id.</xs:documentation>
         </xs:annotation>
       </xs:element>
       <xs:element name="operator" type="pc:CovenantOperator"/>
@@ -1892,11 +1978,6 @@
         </xs:annotation>
       </xs:element>
       <xs:element name="basketConfig" type="pc:Json" minOccurs="0"/>
-      <xs:element name="addbackCapPct" type="pc:Percent" minOccurs="0" default="25">
-        <xs:annotation>
-          <xs:documentation>Defaults to 25.</xs:documentation>
-        </xs:annotation>
-      </xs:element>
       <xs:element name="sourceRef" type="xs:string" minOccurs="0">
         <xs:annotation>
           <xs:documentation>Note: &quot;Credit Agreement §7.11(a)&quot;.</xs:documentation>
@@ -1926,7 +2007,7 @@
           <xs:documentation>Foreign key → CovenantDefinition.id.</xs:documentation>
         </xs:annotation>
       </xs:element>
-      <xs:element name="effectiveFrom" type="xs:dateTime"/>
+      <xs:element name="effectiveFrom" type="xs:date"/>
       <xs:element name="value" type="pc:Ratio"/>
     </xs:sequence>
   </xs:complexType>
@@ -1946,8 +2027,8 @@
           <xs:documentation>Foreign key → CovenantDefinition.id.</xs:documentation>
         </xs:annotation>
       </xs:element>
-      <xs:element name="periodEnd" type="xs:dateTime"/>
-      <xs:element name="testDate" type="xs:dateTime"/>
+      <xs:element name="periodEnd" type="xs:date"/>
+      <xs:element name="testDate" type="xs:date"/>
       <xs:element name="recomputedValue" type="pc:Ratio" minOccurs="0">
         <xs:annotation>
           <xs:documentation>Independently recomputed by the engine from FundamentalFacts.</xs:documentation>
@@ -2027,15 +2108,19 @@
           <xs:documentation>Foreign key → ReportingObligation.id.</xs:documentation>
         </xs:annotation>
       </xs:element>
-      <xs:element name="periodEnd" type="xs:dateTime"/>
-      <xs:element name="dueOn" type="xs:dateTime"/>
+      <xs:element name="periodEnd" type="xs:date"/>
+      <xs:element name="dueOn" type="xs:date"/>
       <xs:element name="deliveredAt" type="xs:dateTime" minOccurs="0"/>
       <xs:element name="status" type="pc:DeliveryStatus" default="PENDING">
         <xs:annotation>
           <xs:documentation>Defaults to PENDING.</xs:documentation>
         </xs:annotation>
       </xs:element>
-      <xs:element name="documentId" type="xs:string" minOccurs="0"/>
+      <xs:element name="documentId" type="pc:Cuid" minOccurs="0">
+        <xs:annotation>
+          <xs:documentation>Foreign key → Document.id.</xs:documentation>
+        </xs:annotation>
+      </xs:element>
       <xs:element name="loggedById" type="pc:Cuid" minOccurs="0">
         <xs:annotation>
           <xs:documentation>Foreign key → User.id.</xs:documentation>
@@ -2074,7 +2159,7 @@
         </xs:annotation>
       </xs:element>
       <xs:element name="committedCapital" type="pc:Money" minOccurs="0"/>
-      <xs:element name="inceptionOn" type="xs:dateTime" minOccurs="0"/>
+      <xs:element name="inceptionOn" type="xs:date" minOccurs="0"/>
     </xs:sequence>
   </xs:complexType>
 
@@ -2106,7 +2191,7 @@
 
   <xs:complexType name="Position">
     <xs:annotation>
-      <xs:documentation>A fund's actual economic holding in an instrument. This — not Deal — is what portfolio exposure, marks and returns roll up from. Unique: (fundId, instrumentId).</xs:documentation>
+      <xs:documentation>A fund's actual economic holding in an instrument. This — not Deal — is what portfolio exposure, marks and returns roll up from.</xs:documentation>
     </xs:annotation>
     <xs:sequence>
       <xs:element name="id" type="pc:Cuid">
@@ -2132,12 +2217,12 @@
       <xs:element name="parAmount" type="pc:Money"/>
       <xs:element name="fundedAmount" type="pc:Money" default="0">
         <xs:annotation>
-          <xs:documentation>Defaults to 0.</xs:documentation>
+          <xs:documentation>Running totals kept in step with PositionTransaction, which is the record. Defaults to 0.</xs:documentation>
         </xs:annotation>
       </xs:element>
       <xs:element name="costBasis" type="pc:Money"/>
-      <xs:element name="openedOn" type="xs:dateTime"/>
-      <xs:element name="closedOn" type="xs:dateTime" minOccurs="0"/>
+      <xs:element name="openedOn" type="xs:date"/>
+      <xs:element name="closedOn" type="xs:date" minOccurs="0"/>
     </xs:sequence>
   </xs:complexType>
 
@@ -2157,8 +2242,8 @@
         </xs:annotation>
       </xs:element>
       <xs:element name="type" type="pc:TransactionType"/>
-      <xs:element name="tradeDate" type="xs:dateTime"/>
-      <xs:element name="settleDate" type="xs:dateTime" minOccurs="0"/>
+      <xs:element name="tradeDate" type="xs:date"/>
+      <xs:element name="settleDate" type="xs:date" minOccurs="0"/>
       <xs:element name="amount" type="pc:Money">
         <xs:annotation>
           <xs:documentation>Note: signed: outflow negative.</xs:documentation>
@@ -2176,7 +2261,7 @@
 
   <xs:complexType name="Valuation">
     <xs:annotation>
-      <xs:documentation>Unique: (positionId, asOf, method).</xs:documentation>
+      <xs:documentation>The mark for one instrument on one date, by one method. One price per instrument per date, so two of our funds holding the same instrument cannot carry it at different values. A position's fair value is its par times the price — computed, not stored, so it cannot disagree with the mark. Unique: (instrumentId, asOf, method).</xs:documentation>
     </xs:annotation>
     <xs:sequence>
       <xs:element name="id" type="pc:Cuid">
@@ -2184,15 +2269,14 @@
           <xs:documentation>Primary key.</xs:documentation>
         </xs:annotation>
       </xs:element>
-      <xs:element name="positionId" type="pc:Cuid">
+      <xs:element name="instrumentId" type="pc:Cuid">
         <xs:annotation>
-          <xs:documentation>Foreign key → Position.id.</xs:documentation>
+          <xs:documentation>Foreign key → Instrument.id.</xs:documentation>
         </xs:annotation>
       </xs:element>
-      <xs:element name="asOf" type="xs:dateTime"/>
+      <xs:element name="asOf" type="xs:date"/>
       <xs:element name="method" type="pc:ValuationMethod"/>
       <xs:element name="pricePctOfPar" type="pc:Percent"/>
-      <xs:element name="fairValue" type="pc:Money"/>
       <xs:element name="discountRate" type="pc:Percent" minOccurs="0"/>
       <xs:element name="status" type="pc:ValuationStatus" default="DRAFT">
         <xs:annotation>
@@ -2216,7 +2300,7 @@
 
   <xs:complexType name="ReturnSnapshot">
     <xs:annotation>
-      <xs:documentation>Materialized IRR/MOIC so dashboard tiles don't recompute XIRR per request.</xs:documentation>
+      <xs:documentation>Materialized IRR/MOIC so dashboard tiles don't recompute XIRR per request. For exactly one of a position or a fund — CHECK (num_nonnulls(positionId, fundId) = 1) in the migration.</xs:documentation>
     </xs:annotation>
     <xs:sequence>
       <xs:element name="id" type="pc:Cuid">
@@ -2234,12 +2318,17 @@
           <xs:documentation>Foreign key → Fund.id.</xs:documentation>
         </xs:annotation>
       </xs:element>
-      <xs:element name="asOf" type="xs:dateTime"/>
+      <xs:element name="asOf" type="xs:date"/>
       <xs:element name="grossIrrPct" type="pc:Percent" minOccurs="0"/>
       <xs:element name="netIrrPct" type="pc:Percent" minOccurs="0"/>
       <xs:element name="moic" type="pc:Percent" minOccurs="0"/>
       <xs:element name="realized" type="pc:Money" minOccurs="0"/>
       <xs:element name="unrealized" type="pc:Money" minOccurs="0"/>
+      <xs:element name="currency" type="pc:Currency">
+        <xs:annotation>
+          <xs:documentation>The currency realized and unrealized are stated in: the position's, or the fund's reporting currency for a fund-level snapshot.</xs:documentation>
+        </xs:annotation>
+      </xs:element>
     </xs:sequence>
   </xs:complexType>
 
@@ -2260,7 +2349,7 @@
           <xs:documentation>Foreign key → Company.id.</xs:documentation>
         </xs:annotation>
       </xs:element>
-      <xs:element name="asOf" type="xs:dateTime"/>
+      <xs:element name="asOf" type="xs:date"/>
       <xs:element name="rating" type="xs:string">
         <xs:annotation>
           <xs:documentation>Note: internal scale, e.g. &quot;1&quot;..&quot;7&quot;.</xs:documentation>
@@ -2292,7 +2381,7 @@
           <xs:documentation>Foreign key → Company.id.</xs:documentation>
         </xs:annotation>
       </xs:element>
-      <xs:element name="asOf" type="xs:dateTime"/>
+      <xs:element name="asOf" type="xs:date"/>
       <xs:element name="isOnWatchlist" type="xs:boolean"/>
       <xs:element name="reason" type="xs:string" minOccurs="0"/>
       <xs:element name="changedById" type="pc:Cuid" minOccurs="0">
@@ -2318,13 +2407,17 @@
           <xs:documentation>Foreign key → Organization.id.</xs:documentation>
         </xs:annotation>
       </xs:element>
-      <xs:element name="asOf" type="xs:dateTime"/>
+      <xs:element name="asOf" type="xs:date"/>
       <xs:element name="scopeType" type="xs:string">
         <xs:annotation>
           <xs:documentation>What the metric is scoped to: ORG | FUND | DEAL | POSITION | COMPANY</xs:documentation>
         </xs:annotation>
       </xs:element>
-      <xs:element name="scopeId" type="xs:string" minOccurs="0"/>
+      <xs:element name="scopeId" type="xs:string" default="">
+        <xs:annotation>
+          <xs:documentation>Empty for ORG scope rather than NULL, so the uniqueness rule holds: Postgres treats NULLs in a unique key as distinct. Defaults to an empty string.</xs:documentation>
+        </xs:annotation>
+      </xs:element>
       <xs:element name="metric" type="xs:string">
         <xs:annotation>
           <xs:documentation>Note: committed_capital | wtd_leverage | breach_count.</xs:documentation>
@@ -2466,8 +2559,8 @@
           <xs:documentation>The issuer, for schemes unique only inside one system (agent, WSO instance). Empty rather than NULL so it takes part in the uniqueness rule. Defaults to an empty string.</xs:documentation>
         </xs:annotation>
       </xs:element>
-      <xs:element name="validFrom" type="xs:dateTime"/>
-      <xs:element name="validTo" type="xs:dateTime" minOccurs="0">
+      <xs:element name="validFrom" type="xs:date"/>
+      <xs:element name="validTo" type="xs:date" minOccurs="0">
         <xs:annotation>
           <xs:documentation>Set when the identifier is retired; the row is kept for history.</xs:documentation>
         </xs:annotation>
@@ -2799,6 +2892,13 @@
             </xs:sequence>
           </xs:complexType>
         </xs:element>
+        <xs:element name="EbitdaDefinitions" minOccurs="0">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="EbitdaDefinition" type="pc:EbitdaDefinition" minOccurs="0" maxOccurs="unbounded"/>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
         <xs:element name="CovenantDefinitions" minOccurs="0">
           <xs:complexType>
             <xs:sequence>
@@ -3014,6 +3114,10 @@
       <xs:selector xpath="pc:EbitdaAdjustments/pc:EbitdaAdjustment"/>
       <xs:field xpath="pc:id"/>
     </xs:key>
+    <xs:key name="key_EbitdaDefinition_id">
+      <xs:selector xpath="pc:EbitdaDefinitions/pc:EbitdaDefinition"/>
+      <xs:field xpath="pc:id"/>
+    </xs:key>
     <xs:key name="key_Facility_id">
       <xs:selector xpath="pc:Facilities/pc:Facility"/>
       <xs:field xpath="pc:id"/>
@@ -3171,7 +3275,7 @@
       <xs:field xpath="pc:id"/>
     </xs:key>
 
-    <!-- Foreign keys: 117 references, mirroring the relational model. -->
+    <!-- Foreign keys: 123 references, mirroring the relational model. -->
     <xs:keyref name="fk_ActivityEvent_actorId" refer="pc:key_User_id">
       <xs:selector xpath="pc:ActivityEvents/pc:ActivityEvent"/>
       <xs:field xpath="pc:actorId"/>
@@ -3179,6 +3283,10 @@
     <xs:keyref name="fk_ActivityEvent_dealId" refer="pc:key_Deal_id">
       <xs:selector xpath="pc:ActivityEvents/pc:ActivityEvent"/>
       <xs:field xpath="pc:dealId"/>
+    </xs:keyref>
+    <xs:keyref name="fk_ActivityEvent_orgId" refer="pc:key_Organization_id">
+      <xs:selector xpath="pc:ActivityEvents/pc:ActivityEvent"/>
+      <xs:field xpath="pc:orgId"/>
     </xs:keyref>
     <xs:keyref name="fk_Advisor_orgId" refer="pc:key_Organization_id">
       <xs:selector xpath="pc:Advisors/pc:Advisor"/>
@@ -3255,6 +3363,10 @@
     <xs:keyref name="fk_CovenantDefinition_dealId" refer="pc:key_Deal_id">
       <xs:selector xpath="pc:CovenantDefinitions/pc:CovenantDefinition"/>
       <xs:field xpath="pc:dealId"/>
+    </xs:keyref>
+    <xs:keyref name="fk_CovenantDefinition_ebitdaDefinitionId" refer="pc:key_EbitdaDefinition_id">
+      <xs:selector xpath="pc:CovenantDefinitions/pc:CovenantDefinition"/>
+      <xs:field xpath="pc:ebitdaDefinitionId"/>
     </xs:keyref>
     <xs:keyref name="fk_CovenantTest_definitionId" refer="pc:key_CovenantDefinition_id">
       <xs:selector xpath="pc:CovenantTests/pc:CovenantTest"/>
@@ -3376,6 +3488,14 @@
       <xs:selector xpath="pc:EbitdaAdjustments/pc:EbitdaAdjustment"/>
       <xs:field xpath="pc:createdById"/>
     </xs:keyref>
+    <xs:keyref name="fk_EbitdaDefinition_baseFieldCode" refer="pc:key_FieldDefinition_code">
+      <xs:selector xpath="pc:EbitdaDefinitions/pc:EbitdaDefinition"/>
+      <xs:field xpath="pc:baseFieldCode"/>
+    </xs:keyref>
+    <xs:keyref name="fk_EbitdaDefinition_dealId" refer="pc:key_Deal_id">
+      <xs:selector xpath="pc:EbitdaDefinitions/pc:EbitdaDefinition"/>
+      <xs:field xpath="pc:dealId"/>
+    </xs:keyref>
     <xs:keyref name="fk_Facility_dealId" refer="pc:key_Deal_id">
       <xs:selector xpath="pc:Facilities/pc:Facility"/>
       <xs:field xpath="pc:dealId"/>
@@ -3424,17 +3544,21 @@
       <xs:selector xpath="pc:ICAgendaItems/pc:ICAgendaItem"/>
       <xs:field xpath="pc:meetingId"/>
     </xs:keyref>
+    <xs:keyref name="fk_ICAgendaItem_memoVersionId" refer="pc:key_MemoVersion_id">
+      <xs:selector xpath="pc:ICAgendaItems/pc:ICAgendaItem"/>
+      <xs:field xpath="pc:memoVersionId"/>
+    </xs:keyref>
     <xs:keyref name="fk_ICAgendaItem_termSheetId" refer="pc:key_TermSheet_id">
       <xs:selector xpath="pc:ICAgendaItems/pc:ICAgendaItem"/>
       <xs:field xpath="pc:termSheetId"/>
     </xs:keyref>
-    <xs:keyref name="fk_ICVote_dealId" refer="pc:key_Deal_id">
-      <xs:selector xpath="pc:ICVotes/pc:ICVote"/>
-      <xs:field xpath="pc:dealId"/>
+    <xs:keyref name="fk_ICMeeting_orgId" refer="pc:key_Organization_id">
+      <xs:selector xpath="pc:ICMeetings/pc:ICMeeting"/>
+      <xs:field xpath="pc:orgId"/>
     </xs:keyref>
-    <xs:keyref name="fk_ICVote_meetingId" refer="pc:key_ICMeeting_id">
+    <xs:keyref name="fk_ICVote_agendaItemId" refer="pc:key_ICAgendaItem_id">
       <xs:selector xpath="pc:ICVotes/pc:ICVote"/>
-      <xs:field xpath="pc:meetingId"/>
+      <xs:field xpath="pc:agendaItemId"/>
     </xs:keyref>
     <xs:keyref name="fk_ICVote_voterId" refer="pc:key_User_id">
       <xs:selector xpath="pc:ICVotes/pc:ICVote"/>
@@ -3536,6 +3660,10 @@
       <xs:selector xpath="pc:RatingHistories/pc:RatingHistory"/>
       <xs:field xpath="pc:companyId"/>
     </xs:keyref>
+    <xs:keyref name="fk_ReportingDelivery_documentId" refer="pc:key_Document_id">
+      <xs:selector xpath="pc:ReportingDeliveries/pc:ReportingDelivery"/>
+      <xs:field xpath="pc:documentId"/>
+    </xs:keyref>
     <xs:keyref name="fk_ReportingDelivery_loggedById" refer="pc:key_User_id">
       <xs:selector xpath="pc:ReportingDeliveries/pc:ReportingDelivery"/>
       <xs:field xpath="pc:loggedById"/>
@@ -3612,9 +3740,9 @@
       <xs:selector xpath="pc:Valuations/pc:Valuation"/>
       <xs:field xpath="pc:approvedById"/>
     </xs:keyref>
-    <xs:keyref name="fk_Valuation_positionId" refer="pc:key_Position_id">
+    <xs:keyref name="fk_Valuation_instrumentId" refer="pc:key_Instrument_id">
       <xs:selector xpath="pc:Valuations/pc:Valuation"/>
-      <xs:field xpath="pc:positionId"/>
+      <xs:field xpath="pc:instrumentId"/>
     </xs:keyref>
     <xs:keyref name="fk_Valuation_preparedById" refer="pc:key_User_id">
       <xs:selector xpath="pc:Valuations/pc:Valuation"/>

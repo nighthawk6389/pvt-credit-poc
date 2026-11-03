@@ -24,6 +24,9 @@
 //   4. Multi-tenant: root aggregates carry orgId.
 //   5. Amounts always travel with a currency. FX rates are market data, read
 //      from the vendor at the time of the roll-up.
+//   8. Calendar dates are @db.Date — period ends, as-of, due and effective
+//      dates. A timestamp at UTC midnight reads as the previous day anywhere
+//      west of Greenwich.
 //   6. Real-world identifiers (CUSIP, LoanX, LEI, …) are effective-dated rows
 //      in InstrumentIdentifier, never nullable columns on the thing they name.
 //   7. Systems of record are linked, never copied. A link row holds a local id
@@ -195,6 +198,20 @@ enum QAStatus {
   OPEN
   ANSWERED
   CLOSED
+}
+
+enum MemoPurpose {
+  INITIAL
+  ADD_ON
+  AMENDMENT
+  ANNUAL_REVIEW
+}
+
+/// How an add-back counts toward covenant EBITDA under the agreement.
+enum CapTreatment {
+  CAPPED
+  UNCAPPED
+  EXCLUDED
 }
 
 enum MemoStatus {
@@ -371,6 +388,8 @@ model Organization {
   alerts       Alert[]
   auditEvents  AuditEvent[]
   kpiSnapshots KpiSnapshot[]
+  icMeetings   ICMeeting[]
+  activity     ActivityEvent[]
   identifiers  InstrumentIdentifier[]
 }
 
@@ -466,7 +485,9 @@ model DealTeamMember {
   addedAt       DateTime  @default(now())
   removedAt     DateTime?
 
-  @@unique([dealId, userId])
+  /// One open seat per person per deal: unique on (dealId, userId) WHERE
+  /// removedAt IS NULL in the migration, so someone removed can be re-added.
+  @@index([dealId, userId])
   @@index([userId])
   @@index([dealId, role])
 }
@@ -511,17 +532,19 @@ model AuditEvent {
 
 /// Human-readable feed powering the dashboard "Recent activity" widget.
 model ActivityEvent {
-  id         String   @id @default(cuid())
+  id         String       @id @default(cuid())
+  orgId      String
+  org        Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   dealId     String?
-  deal       Deal?    @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  deal       Deal?        @relation(fields: [dealId], references: [id], onDelete: Cascade)
   actorId    String?
-  actor      User?    @relation(fields: [actorId], references: [id])
+  actor      User?        @relation(fields: [actorId], references: [id])
   verb       String
   target     String?
-  occurredAt DateTime @default(now())
+  occurredAt DateTime     @default(now())
 
   @@index([dealId, occurredAt])
-  @@index([occurredAt])
+  @@index([orgId, occurredAt])
 }
 
 // ════════════════════ 2. LINKS TO SYSTEMS OF RECORD ═══════════════════════
@@ -606,6 +629,7 @@ model Instrument {
 
   facilities  Facility[]
   positions   Position[]
+  valuations  Valuation[]
   amendments  Amendment[]
   identifiers InstrumentIdentifier[]
 
@@ -646,8 +670,8 @@ model Deal {
   probability   Int?                @default(50)
   useOfProceeds String?
   thesis        String?
-  targetCloseOn DateTime?
-  closedOn      DateTime?
+  targetCloseOn DateTime?           @db.Date
+  closedOn      DateTime?           @db.Date
   /// Information-barrier flag: privileged deals are hidden from non-crossed users.
   isPrivileged  Boolean             @default(true)
   createdAt     DateTime            @default(now())
@@ -662,9 +686,8 @@ model Deal {
   documents       Document[]
   diligenceItems  DiligenceItem[]
   qaThreads       QAThread[]
-  memo            CreditMemo?
+  memos           CreditMemo[]
   agendaItems     ICAgendaItem[]
-  votes           ICVote[]
   tasks           Task[]
   notes           Note[]
   comments        Comment[]
@@ -672,6 +695,7 @@ model Deal {
   termSheets      TermSheet[]
   collateral      Collateral[]
   covenants       CovenantDefinition[]
+  ebitdaDefs      EbitdaDefinition[]
   obligations     ReportingObligation[]
   amendments      Amendment[]
   alerts          Alert[]
@@ -706,7 +730,7 @@ model Milestone {
   dealId      String
   deal        Deal      @relation(fields: [dealId], references: [id], onDelete: Cascade)
   name        String
-  dueOn       DateTime?
+  dueOn       DateTime? @db.Date
   completedAt DateTime?
 
   @@index([dealId, dueOn])
@@ -727,50 +751,58 @@ model DealAdvisor {
 
 model ICMeeting {
   id      String         @id @default(cuid())
+  orgId   String
+  org     Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
   title   String
   heldAt  DateTime
   minutes String?
   agenda  ICAgendaItem[]
-  votes   ICVote[]
 
-  @@index([heldAt])
+  @@index([orgId, heldAt])
 }
 
 model ICAgendaItem {
-  id          String     @id @default(cuid())
-  meetingId   String
-  meeting     ICMeeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
-  dealId      String
-  deal        Deal       @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  id            String       @id @default(cuid())
+  meetingId     String
+  meeting       ICMeeting    @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  dealId        String
+  deal          Deal         @relation(fields: [dealId], references: [id], onDelete: Cascade)
   /// The terms put to this committee — the version its decision applies to.
-  termSheetId String?
-  termSheet   TermSheet? @relation(fields: [termSheetId], references: [id])
-  outcome     String?
+  termSheetId   String?
+  termSheet     TermSheet?   @relation(fields: [termSheetId], references: [id])
+  /// The memo version the committee read.
+  memoVersionId String?
+  memoVersion   MemoVersion? @relation(fields: [memoVersionId], references: [id])
+  outcome       String?
+  votes         ICVote[]
 
   @@unique([meetingId, dealId])
 }
 
+/// One member's vote on one agenda item. A deal that returns to committee —
+/// for an add-on, an amendment or an annual review — gets a new agenda item,
+/// so its earlier votes stay on the record.
 model ICVote {
-  id        String       @id @default(cuid())
-  dealId    String
-  deal      Deal         @relation(fields: [dealId], references: [id], onDelete: Cascade)
-  meetingId String?
-  meeting   ICMeeting?   @relation(fields: [meetingId], references: [id])
-  voterId   String
-  voter     User         @relation(fields: [voterId], references: [id])
-  choice    ICVoteChoice
-  condition String? // for CONDITIONAL approvals
-  comment   String?
-  votedAt   DateTime     @default(now())
+  id           String       @id @default(cuid())
+  agendaItemId String
+  agendaItem   ICAgendaItem @relation(fields: [agendaItemId], references: [id], onDelete: Cascade)
+  voterId      String
+  voter        User         @relation(fields: [voterId], references: [id])
+  choice       ICVoteChoice
+  condition    String? // for CONDITIONAL approvals
+  comment      String?
+  votedAt      DateTime     @default(now())
 
-  @@unique([dealId, voterId])
-  @@index([meetingId])
+  @@unique([agendaItemId, voterId])
 }
 
+/// The memo behind one credit decision on a deal: the initial approval, an
+/// add-on, an amendment or an annual review. A deal accumulates them.
 model CreditMemo {
   id               String        @id @default(cuid())
-  dealId           String        @unique
+  dealId           String
   deal             Deal          @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  purpose          MemoPurpose   @default(INITIAL)
   status           MemoStatus    @default(DRAFT)
   recommendation   String?
   proposedRating   String?
@@ -778,19 +810,22 @@ model CreditMemo {
   currentVersion   MemoVersion?  @relation("MemoCurrent", fields: [currentVersionId], references: [id])
   versions         MemoVersion[] @relation("MemoVersions")
   updatedAt        DateTime      @updatedAt
+
+  @@index([dealId])
 }
 
 model MemoVersion {
-  id         String        @id @default(cuid())
-  memoId     String
-  memo       CreditMemo    @relation("MemoVersions", fields: [memoId], references: [id], onDelete: Cascade)
-  versionNo  Int
-  authorId   String?
-  author     User?         @relation(fields: [authorId], references: [id])
-  changeNote String?
-  createdAt  DateTime      @default(now())
-  sections   MemoSection[]
-  currentOf  CreditMemo?   @relation("MemoCurrent")
+  id          String         @id @default(cuid())
+  memoId      String
+  memo        CreditMemo     @relation("MemoVersions", fields: [memoId], references: [id], onDelete: Cascade)
+  versionNo   Int
+  authorId    String?
+  author      User?          @relation(fields: [authorId], references: [id])
+  changeNote  String?
+  createdAt   DateTime       @default(now())
+  sections    MemoSection[]
+  currentOf   CreditMemo?    @relation("MemoCurrent")
+  presentedAt ICAgendaItem[]
 
   @@unique([memoId, versionNo])
 }
@@ -820,7 +855,7 @@ model Task {
   assignee    User?      @relation("TaskAssignee", fields: [assigneeId], references: [id])
   createdById String?
   createdBy   User?      @relation("TaskCreator", fields: [createdById], references: [id])
-  dueOn       DateTime?
+  dueOn       DateTime?  @db.Date
   completedAt DateTime?
 
   @@index([dealId, status])
@@ -896,6 +931,7 @@ model Document {
   grants           DocumentAccessGrant[]
   events           DocumentEvent[]
   diligenceItems   DiligenceItem[]
+  deliveries       ReportingDelivery[]
 
   @@index([dealId, kind])
   @@index([folderId])
@@ -924,7 +960,9 @@ model DocumentVersion {
 }
 
 /// Explicit grant of access to a document or an entire folder, to a user or
-/// a team. Absence of a grant = no access (deny by default).
+/// a team. Absence of a grant = no access (deny by default). Exactly one of
+/// documentId / folderId, and exactly one of granteeId / teamId — two CHECK
+/// (num_nonnulls(...) = 1) constraints in the migration.
 model DocumentAccessGrant {
   id          String    @id @default(cuid())
   documentId  String?
@@ -977,7 +1015,7 @@ model DiligenceItem {
   assignee   User?           @relation("DiligenceAssignee", fields: [assigneeId], references: [id])
   evidenceId String?
   evidence   Document?       @relation(fields: [evidenceId], references: [id])
-  dueOn      DateTime?
+  dueOn      DateTime?       @db.Date
   order      Int             @default(0)
 
   @@index([dealId, status])
@@ -1067,8 +1105,8 @@ model Amendment {
   status       AmendmentStatus    @default(PROPOSED)
   title        String
   description  String?
-  requestedOn  DateTime           @default(now())
-  effectiveOn  DateTime?
+  requestedOn  DateTime           @default(now()) @db.Date
+  effectiveOn  DateTime?          @db.Date
   consents     AmendmentConsent[]
 
   @@index([dealId, status])
@@ -1096,14 +1134,15 @@ model AmendmentConsent {
 /// vocabulary instead of hard-coded column names, and records how each field
 /// aggregates across periods (the LTM / calendar-basis problem).
 model FieldDefinition {
-  id                String            @id @default(cuid())
-  code              String            @unique // EBITDA_ADJ, TOT_DEBT, CASH...
+  id                String             @id @default(cuid())
+  code              String             @unique // EBITDA_ADJ, TOT_DEBT, CASH...
   label             String
   unit              String // x | % | currency
   aggregation       FieldAggregation
   bloombergMnemonic String? // FA <GO> field, e.g. SALES_REV_TURN
   deriveFormula     String? // e.g. "TOT_DEBT - CASH"
   facts             FundamentalFact[]
+  ebitdaBases       EbitdaDefinition[]
 }
 
 /// Metadata for a reporting period. Values live in FundamentalFact so the
@@ -1112,7 +1151,7 @@ model FinancialPeriod {
   id         String            @id @default(cuid())
   companyId  String
   company    Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  periodEnd  DateTime
+  periodEnd  DateTime          @db.Date
   periodType PeriodType
   label      String // "Q4 2025"
   currency   Currency          @default(USD)
@@ -1130,11 +1169,15 @@ model FundamentalFact {
   company        Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
   periodId       String?
   period         FinancialPeriod? @relation(fields: [periodId], references: [id], onDelete: Cascade)
-  periodEnd      DateTime
+  periodEnd      DateTime         @db.Date
   periodType     PeriodType       @default(LTM)
+  /// False for a budget or projection.
+  isActual       Boolean          @default(true)
   fieldCode      String
   field          FieldDefinition  @relation(fields: [fieldCode], references: [code])
   value          Decimal          @db.Decimal(20, 4)
+  /// Set when the field's unit is currency; null for ratios and percentages.
+  currency       Currency?
   source         FactSource       @default(BLOOMBERG)
   isOverride     Boolean          @default(false)
   overriddenById String?
@@ -1142,26 +1185,29 @@ model FundamentalFact {
   note           String?
   recordedAt     DateTime         @default(now())
 
-  /// One value per field per period per source lane; overrides layer on top.
-  @@unique([companyId, periodEnd, fieldCode, source])
+  /// One value per field, period end, period type, actual-or-projected and
+  /// source lane. A quarter's EBITDA and the LTM EBITDA to the same date are
+  /// different facts; overrides layer on top as their own lane.
+  @@unique([companyId, periodEnd, periodType, isActual, fieldCode, source])
   @@index([companyId, periodEnd])
   @@index([fieldCode])
 }
 
-/// GAAP -> covenant-defined Adjusted EBITDA bridge, with cap flags so the
-/// permitted amount can be computed rather than asserted.
+/// GAAP -> covenant-defined Adjusted EBITDA bridge. Each add-back records how
+/// the agreement treats it, so the permitted amount is computed, not asserted.
 model EbitdaAdjustment {
   id           String          @id @default(cuid())
   companyId    String
   company      Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  periodEnd    DateTime
+  periodEnd    DateTime        @db.Date
   label        String
   amount       Decimal         @db.Decimal(20, 4)
+  currency     Currency        @default(USD)
   category     AddbackCategory
-  /// Subject to the agreement's add-back cap (e.g. 25% of unadjusted EBITDA).
-  isCapped     Boolean         @default(false)
-  /// Contractually uncapped — flows through in full.
-  isUncapped   Boolean         @default(false)
+  /// CAPPED counts within the EBITDA definition's cap; UNCAPPED counts in
+  /// full; EXCLUDED is recorded for the bridge but not permitted. Defaults to
+  /// the conservative reading.
+  capTreatment CapTreatment    @default(CAPPED)
   /// Analyst quality flag (run-rate / unrealized synergies).
   isAggressive Boolean         @default(false)
   sourceRef    String?
@@ -1172,29 +1218,50 @@ model EbitdaAdjustment {
   @@index([companyId, periodEnd])
 }
 
+/// How a deal's agreement defines covenant EBITDA: the field it starts from
+/// and how far capped add-backs may take it. Shared by every covenant that
+/// uses it, so the leverage and fixed-charge tests cannot disagree about what
+/// EBITDA means.
+model EbitdaDefinition {
+  id            String               @id @default(cuid())
+  dealId        String
+  deal          Deal                 @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  name          String               @default("Consolidated EBITDA")
+  /// The field the definition starts from, before add-backs.
+  baseFieldCode String
+  baseField     FieldDefinition      @relation(fields: [baseFieldCode], references: [code])
+  /// Capped add-backs may not exceed this share of base EBITDA.
+  addbackCapPct Decimal?             @db.Decimal(9, 4)
+  sourceRef     String? // "Credit Agreement §1.01, 'Consolidated EBITDA'"
+  covenants     CovenantDefinition[]
+
+  @@unique([dealId, name])
+}
+
 model CovenantDefinition {
-  id                 String           @id @default(cuid())
+  id                 String            @id @default(cuid())
   dealId             String
-  deal               Deal             @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  deal               Deal              @relation(fields: [dealId], references: [id], onDelete: Cascade)
   name               String
   category           CovenantCategory
   /// Human-readable expression over FieldDefinition codes.
   formula            String
   formulaAst         Json
   fieldRefs          String[]
-  ebitdaBasis        String           @default("EBITDA_ADJ")
+  /// The EBITDA definition the formula uses, when it uses one.
+  ebitdaDefinitionId String?
+  ebitdaDefinition   EbitdaDefinition? @relation(fields: [ebitdaDefinitionId], references: [id])
   operator           CovenantOperator
   unit               String
   /// Fallback level used when no threshold step applies.
-  threshold          Decimal          @db.Decimal(18, 6)
-  frequency          String           @default("Quarterly")
+  threshold          Decimal           @db.Decimal(18, 6)
+  frequency          String            @default("Quarterly")
   /// e.g. { field: "RCF_UTIL_PCT", op: ">", value: 40 } for springing tests.
   springingCondition Json?
   basketConfig       Json?
-  addbackCapPct      Decimal?         @default(25) @db.Decimal(9, 4)
   sourceRef          String? // "Credit Agreement §7.11(a)"
-  isActive           Boolean          @default(true)
-  createdAt          DateTime         @default(now())
+  isActive           Boolean           @default(true)
+  createdAt          DateTime          @default(now())
 
   steps CovenantThresholdStep[]
   tests CovenantTest[]
@@ -1208,7 +1275,7 @@ model CovenantThresholdStep {
   id            String             @id @default(cuid())
   definitionId  String
   definition    CovenantDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
-  effectiveFrom DateTime
+  effectiveFrom DateTime           @db.Date
   value         Decimal            @db.Decimal(18, 6)
 
   @@unique([definitionId, effectiveFrom])
@@ -1218,8 +1285,8 @@ model CovenantTest {
   id               String             @id @default(cuid())
   definitionId     String
   definition       CovenantDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
-  periodEnd        DateTime
-  testDate         DateTime
+  periodEnd        DateTime           @db.Date
+  testDate         DateTime           @db.Date
   /// Independently recomputed by the engine from FundamentalFacts.
   recomputedValue  Decimal?           @db.Decimal(18, 6)
   /// As stated on the borrower's compliance certificate.
@@ -1257,11 +1324,12 @@ model ReportingDelivery {
   id           String              @id @default(cuid())
   obligationId String
   obligation   ReportingObligation @relation(fields: [obligationId], references: [id], onDelete: Cascade)
-  periodEnd    DateTime
-  dueOn        DateTime
+  periodEnd    DateTime            @db.Date
+  dueOn        DateTime            @db.Date
   deliveredAt  DateTime?
   status       DeliveryStatus      @default(PENDING)
   documentId   String?
+  document     Document?           @relation(fields: [documentId], references: [id])
   loggedById   String?
   loggedBy     User?               @relation(fields: [loggedById], references: [id])
 
@@ -1280,7 +1348,7 @@ model Fund {
   vintage          Int?
   currency         Currency     @default(USD)
   committedCapital Decimal?     @db.Decimal(20, 4)
-  inceptionOn      DateTime?
+  inceptionOn      DateTime?    @db.Date
 
   positions   Position[]
   allocations Allocation[]
@@ -1313,17 +1381,20 @@ model Position {
   instrument   Instrument @relation(fields: [instrumentId], references: [id], onDelete: Cascade)
   currency     Currency   @default(USD)
   parAmount    Decimal    @db.Decimal(20, 4)
+  /// Running totals kept in step with PositionTransaction, which is the record.
   fundedAmount Decimal    @default(0) @db.Decimal(20, 4)
   costBasis    Decimal    @db.Decimal(20, 4)
-  openedOn     DateTime
-  closedOn     DateTime?
+  openedOn     DateTime   @db.Date
+  closedOn     DateTime?  @db.Date
 
   transactions PositionTransaction[]
-  valuations   Valuation[]
   snapshots    ReturnSnapshot[]
   identifiers  InstrumentIdentifier[]
 
-  @@unique([fundId, instrumentId])
+  /// A fund holds an instrument once at a time: unique on (fundId,
+  /// instrumentId) among open positions — a partial unique index WHERE
+  /// closedOn IS NULL in the migration — so it can exit and re-enter.
+  @@index([fundId, instrumentId])
   @@index([instrumentId])
 }
 
@@ -1333,8 +1404,8 @@ model PositionTransaction {
   positionId String
   position   Position        @relation(fields: [positionId], references: [id], onDelete: Cascade)
   type       TransactionType
-  tradeDate  DateTime
-  settleDate DateTime?
+  tradeDate  DateTime        @db.Date
+  settleDate DateTime?       @db.Date
   amount     Decimal         @db.Decimal(20, 4) // signed: outflow negative
   pricePct   Decimal?        @db.Decimal(9, 4)
   currency   Currency        @default(USD)
@@ -1343,14 +1414,17 @@ model PositionTransaction {
   @@index([positionId, tradeDate])
 }
 
+/// The mark for one instrument on one date, by one method. One price per
+/// instrument per date, so two of our funds holding the same instrument cannot
+/// carry it at different values. A position's fair value is its par times
+/// the price — computed, not stored, so it cannot disagree with the mark.
 model Valuation {
   id            String          @id @default(cuid())
-  positionId    String
-  position      Position        @relation(fields: [positionId], references: [id], onDelete: Cascade)
-  asOf          DateTime
+  instrumentId  String
+  instrument    Instrument      @relation(fields: [instrumentId], references: [id], onDelete: Cascade)
+  asOf          DateTime        @db.Date
   method        ValuationMethod
   pricePctOfPar Decimal         @db.Decimal(9, 4)
-  fairValue     Decimal         @db.Decimal(20, 4)
   discountRate  Decimal?        @db.Decimal(9, 4)
   status        ValuationStatus @default(DRAFT)
   preparedById  String?
@@ -1360,23 +1434,28 @@ model Valuation {
   approvedAt    DateTime?
   note          String?
 
-  @@unique([positionId, asOf, method])
+  @@unique([instrumentId, asOf, method])
   @@index([asOf, status])
 }
 
 /// Materialized IRR/MOIC so dashboard tiles don't recompute XIRR per request.
+/// For exactly one of a position or a fund — CHECK (num_nonnulls(positionId,
+/// fundId) = 1) in the migration.
 model ReturnSnapshot {
   id          String    @id @default(cuid())
   positionId  String?
   position    Position? @relation(fields: [positionId], references: [id], onDelete: Cascade)
   fundId      String?
   fund        Fund?     @relation(fields: [fundId], references: [id], onDelete: Cascade)
-  asOf        DateTime
+  asOf        DateTime  @db.Date
   grossIrrPct Decimal?  @db.Decimal(9, 4)
   netIrrPct   Decimal?  @db.Decimal(9, 4)
   moic        Decimal?  @db.Decimal(9, 4)
   realized    Decimal?  @db.Decimal(20, 4)
   unrealized  Decimal?  @db.Decimal(20, 4)
+  /// The currency realized and unrealized are stated in: the position's, or
+  /// the fund's reporting currency for a fund-level snapshot.
+  currency    Currency
 
   @@index([asOf])
   @@index([fundId, asOf])
@@ -1391,7 +1470,7 @@ model RatingHistory {
   id          String    @id @default(cuid())
   companyId   String
   company     Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  asOf        DateTime
+  asOf        DateTime  @db.Date
   rating      String // internal scale, e.g. "1".."7"
   trend       RiskTrend @default(STABLE)
   rationale   String?
@@ -1406,7 +1485,7 @@ model WatchlistEvent {
   id            String   @id @default(cuid())
   companyId     String
   company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  asOf          DateTime
+  asOf          DateTime @db.Date
   isOnWatchlist Boolean
   reason        String?
   changedById   String?
@@ -1421,10 +1500,12 @@ model KpiSnapshot {
   id        String       @id @default(cuid())
   orgId     String
   org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  asOf      DateTime
+  asOf      DateTime     @db.Date
   /// What the metric is scoped to: ORG | FUND | DEAL | POSITION | COMPANY
   scopeType String
-  scopeId   String?
+  /// Empty for ORG scope rather than NULL, so the uniqueness rule holds:
+  /// Postgres treats NULLs in a unique key as distinct.
+  scopeId   String       @default("")
   metric    String // committed_capital | wtd_leverage | breach_count
   value     Decimal      @db.Decimal(24, 6)
   currency  Currency?
@@ -1507,9 +1588,9 @@ model InstrumentIdentifier {
   /// The issuer, for schemes unique only inside one system (agent, WSO
   /// instance). Empty rather than NULL so it takes part in the uniqueness rule.
   namespace    String       @default("")
-  validFrom    DateTime
+  validFrom    DateTime     @db.Date
   /// Set when the identifier is retired; the row is kept for history.
-  validTo      DateTime?
+  validTo      DateTime?    @db.Date
   source       IdSource
   verifiedById String?
   verifiedBy   User?        @relation(fields: [verifiedById], references: [id])

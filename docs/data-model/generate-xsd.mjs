@@ -68,7 +68,7 @@ function xsdType(f) {
     case "Int": return "xs:int";
     case "BigInt": return "xs:long";
     case "Boolean": return "xs:boolean";
-    case "DateTime": return "xs:dateTime";
+    case "DateTime": return f.isDateOnly ? "xs:date" : "xs:dateTime";
     case "Float": return "xs:double";
     case "Json": return "pc:Json";
     case "Decimal": return `pc:${decimalTypeName(f)}`;
